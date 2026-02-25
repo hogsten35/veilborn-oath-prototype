@@ -4,6 +4,8 @@ import { BootScene } from '../scenes/BootScene.js';
 import { TitleScene } from '../scenes/TitleScene.js';
 import { FieldScene } from '../scenes/FieldScene.js';
 import { HUD } from '../ui/HUD.js';
+import { DialogueBox } from '../ui/DialogueBox.js';
+import { DialogueRunner } from './DialogueRunner.js';
 
 class KeyboardInput {
   constructor() {
@@ -40,9 +42,7 @@ class KeyboardInput {
       'Enter'
     ]);
 
-    if (preventCodes.has(code)) {
-      event.preventDefault();
-    }
+    if (preventCodes.has(code)) event.preventDefault();
 
     if (!this.down.has(code)) {
       this.pressed.add(code);
@@ -129,7 +129,14 @@ export class Game {
     };
 
     this.input = new KeyboardInput();
+
+    // HUD
     this.hud = new HUD(this.uiRootEl);
+
+    // Dialogue UI + Runner (separate from HUD, but shares the same ui-root)
+    this.dialogueBox = new DialogueBox(this.uiRootEl);
+    this.dialogue = new DialogueRunner({ box: this.dialogueBox });
+
     this.stateManager = new StateManager(this);
 
     this.renderer = this._createRenderer();
@@ -190,15 +197,18 @@ export class Game {
 
     this.stateManager.resize(width, height);
     this.hud.onResize(width, height);
+    this.dialogueBox?.onResize?.(width, height);
   }
 
   start() {
     if (this.clock.running) return;
 
     this.input.attach();
-    this.hud.mount();
 
-    // Start at boot (short animation), then title menu.
+    // Mount UI layers
+    this.hud.mount();
+    this.dialogueBox.mount();
+
     this.stateManager.change('boot');
 
     this.clock.running = true;
@@ -236,27 +246,55 @@ export class Game {
     }
 
     while (this.clock.accumulator >= this.clock.fixedStep) {
-      this.stateManager.update(this.clock.fixedStep);
-      this.clock.accumulator -= this.clock.fixedStep;
+      const dt = this.clock.fixedStep;
+
+      // Scene update
+      this.stateManager.update(dt);
+
+      // Dialogue update (typewriter)
+      this.dialogue.update(dt);
+
+      // Dialogue input handling (confirm/cancel)
+      const actions = this.getInputActions();
+      if (this.dialogue.isActive()) {
+        if (actions.confirmPressed) this.dialogue.handleConfirm();
+        if (actions.cancelPressed) this.dialogue.handleCancel();
+      }
+
+      this.clock.accumulator -= dt;
     }
 
     const active = this.stateManager.getActiveRenderTarget();
-    if (active) {
-      this.renderer.render(active.scene, active.camera);
-    }
+    if (active) this.renderer.render(active.scene, active.camera);
 
     const hudData = this.stateManager.getHUDData();
-    this.hud.update({
-      ...hudData,
-      fps: this.clock.fps
-    });
+    this.hud.update({ ...hudData, fps: this.clock.fps });
 
     this.input.endFrame();
     this._rafId = requestAnimationFrame(this._boundLoop);
   }
 
+  /**
+   * Returns actions, but automatically "locks" movement while dialogue is active.
+   * Dialogue still receives confirm/cancel.
+   */
   getInputActions() {
-    return this.input.getActions();
+    const a = this.input.getActions();
+
+    if (this.dialogue.isActive()) {
+      return {
+        ...a,
+        move: { x: 0, z: 0 },
+        run: false,
+        interactPressed: false,
+        navUpPressed: false,
+        navDownPressed: false,
+        navLeftPressed: false,
+        navRightPressed: false
+      };
+    }
+
+    return a;
   }
 
   getViewport() {

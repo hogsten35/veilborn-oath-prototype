@@ -4,6 +4,12 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function dist2D(a, b) {
+  const dx = a.x - b.x;
+  const dz = a.z - b.z;
+  return Math.sqrt(dx * dx + dz * dz);
+}
+
 export class FieldScene {
   constructor(game) {
     this.game = game;
@@ -39,7 +45,7 @@ export class FieldScene {
     this.animLights = [];
     this.decorSparks = [];
 
-    // Fade-in controller for scene transitions
+    // Fade-in from title
     this._fade = {
       active: false,
       alpha: 0,
@@ -47,10 +53,19 @@ export class FieldScene {
       speed: 2.8
     };
 
+    // Interactable: Notice Post
+    this.notice = {
+      id: 'notice_post',
+      position: new THREE.Vector3(-6.2, 0, -0.4),
+      radius: 1.25,
+      lastShownHint: false
+    };
+
     this._setupScene();
     this._setupFieldGeometry();
     this._setupPlayer();
     this._setupCamera();
+    this._addNoticePost();
   }
 
   enter(params = {}) {
@@ -199,6 +214,41 @@ export class FieldScene {
   _setupCamera() {
     this.camera.position.set(0, 8.5, 9.5);
     this.camera.lookAt(0, 0.5, 0);
+  }
+
+  _addNoticePost() {
+    const postGeo = new THREE.CylinderGeometry(0.08, 0.1, 1.25, 10);
+    const postMat = new THREE.MeshStandardMaterial({
+      color: 0x3c434f,
+      metalness: 0.25,
+      roughness: 0.75
+    });
+    const post = new THREE.Mesh(postGeo, postMat);
+    post.position.set(this.notice.position.x, 0.62, this.notice.position.z);
+    this.scene.add(post);
+
+    const boardGeo = new THREE.BoxGeometry(0.72, 0.42, 0.06);
+    const boardMat = new THREE.MeshStandardMaterial({
+      color: 0x2a2018,
+      metalness: 0.05,
+      roughness: 0.95
+    });
+    const board = new THREE.Mesh(boardGeo, boardMat);
+    board.position.set(this.notice.position.x, 1.05, this.notice.position.z);
+    this.scene.add(board);
+
+    const plaqueGeo = new THREE.PlaneGeometry(0.62, 0.3);
+    const plaqueMat = new THREE.MeshStandardMaterial({
+      color: 0x75e7d8,
+      emissive: 0x143a38,
+      metalness: 0.0,
+      roughness: 0.25
+    });
+    const plaque = new THREE.Mesh(plaqueGeo, plaqueMat);
+    plaque.position.set(0, 0, 0.04);
+    board.add(plaque);
+
+    this.noticeMesh = { post, board, plaque };
   }
 
   _addWall({ x, y, z, w, h, d }) {
@@ -357,20 +407,50 @@ export class FieldScene {
     this._updateFade(dt);
 
     const actions = this.game.getInputActions();
+
+    // Movement + camera + ambience (movement already locked by Game during dialogue)
     this._updatePlayer(dt, actions);
     this._updateCamera(dt);
     this._updateAmbientFX(dt);
 
-    if (actions.interactPressed) {
-      this.game.hud.setToast(
-        'Prototype interact: later this will trigger NPCs/chests/events.',
-        1400
-      );
-    }
+    // Notice post interaction
+    const p = this.player.position;
+    const nearNotice = dist2D(p, this.notice.position) <= this.notice.radius;
 
-    if (actions.cancelPressed) {
-      this.game.hud.setToast('Menu system is coming next.', 900);
+    if (nearNotice) {
+      this.hintText = 'Press E to read the posted notice.';
+      if (actions.interactPressed) {
+        this._startNoticeDialogue();
+      }
+    } else {
+      this.hintText = 'Move: WASD/Arrows • Run: Shift • Interact: E';
     }
+  }
+
+  _startNoticeDialogue() {
+    if (this.game.dialogue.isActive()) return;
+
+    this.game.dialogue.start(
+      [
+        {
+          speaker: 'Canal Notice',
+          text: 'RAIL CURFEW IN EFFECT. After the third bell, transit warrants are required. Unregistered routes will be sealed.'
+        },
+        {
+          speaker: 'Canal Notice',
+          text: 'Report missing ledger marks to the nearest Crown clerk. Unauthorized record correction is punishable by debt levy.'
+        },
+        {
+          speaker: 'Rian',
+          text: 'They call it “correction.” Like scraping rust off a blade. Like names were never flesh to begin with.'
+        }
+      ],
+      {
+        onClose: () => {
+          this.game.hud.setToast('The notice flutters back into place.', 900);
+        }
+      }
+    );
   }
 
   _updateFade(dt) {
@@ -405,7 +485,6 @@ export class FieldScene {
 
       const targetYaw = Math.atan2(x, z);
       this.playerMesh.rotation.y = targetYaw;
-
       this.playerMesh.position.y = 0.35 + Math.sin(this.elapsed * 12.0) * 0.03;
     } else {
       this.playerMesh.position.y = 0.35 + Math.sin(this.elapsed * 3.5) * 0.01;
@@ -478,6 +557,12 @@ export class FieldScene {
   }
 
   _updateAmbientFX(dt) {
+    // Notice post plaque pulse
+    if (this.noticeMesh?.plaque?.material) {
+      const e = 0.25 + Math.sin(this.elapsed * 2.2) * 0.08;
+      this.noticeMesh.plaque.material.emissiveIntensity = e;
+    }
+
     for (const entry of this.animLights) {
       const pulse = Math.sin(this.elapsed * entry.speed + entry.phase) * 0.15;
       entry.light.intensity = entry.baseIntensity + pulse;
