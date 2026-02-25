@@ -27,17 +27,10 @@ export class TitleScene {
 
     this.elapsed = 0;
 
-    // Menu state
     this.screen = 'main'; // main | settings | credits
     this.selection = 0;
-
-    // Later: make true when Save/Load exists
     this.canContinue = false;
 
-    // Placeholder setting value (UI only for now)
-    this.masterVolume = 100;
-
-    // Fade control
     this.fade = {
       alpha: 1,
       target: 0,
@@ -104,9 +97,9 @@ export class TitleScene {
 
   enter() {
     this.game.hud.setMode('title');
+
     this._syncTitleUI();
 
-    // Fade in from black
     this.fade.alpha = 1;
     this.fade.target = 0;
     this.fade.active = true;
@@ -121,14 +114,13 @@ export class TitleScene {
       screen: this.screen,
       selection: this.selection,
       canContinue: this.canContinue,
-      masterVolume: this.masterVolume
+      masterVolume: this.game.state.settings.masterVolume
     });
   }
 
   update(dt) {
     this.elapsed += dt;
 
-    // Backdrop animation
     this.ring.rotation.z += dt * 0.35;
     this.prism.rotation.x += dt * 0.18;
     this.prism.rotation.y += dt * 0.33;
@@ -140,7 +132,6 @@ export class TitleScene {
 
     this._updateFade(dt);
 
-    // While fading out to start game, ignore menu input
     if (this.fade.active && this.fade.target > this.fade.alpha) return;
 
     const actions = this.game.getInputActions();
@@ -148,14 +139,13 @@ export class TitleScene {
     if (actions.navUpPressed) this._moveSelection(-1);
     if (actions.navDownPressed) this._moveSelection(1);
 
-    // Settings adjustments (only when the volume row is selected)
     if (this.screen === 'settings' && this.selection === 0) {
       if (actions.navLeftPressed) {
-        this.masterVolume = clamp(this.masterVolume - 5, 0, 100);
+        this.game.state.settings.masterVolume = clamp(this.game.state.settings.masterVolume - 5, 0, 100);
         this._syncTitleUI();
       }
       if (actions.navRightPressed) {
-        this.masterVolume = clamp(this.masterVolume + 5, 0, 100);
+        this.game.state.settings.masterVolume = clamp(this.game.state.settings.masterVolume + 5, 0, 100);
         this._syncTitleUI();
       }
     }
@@ -181,7 +171,6 @@ export class TitleScene {
       ];
     }
 
-    // credits
     return [{ id: 'back', enabled: true }];
   }
 
@@ -233,20 +222,19 @@ export class TitleScene {
     }
 
     if (this.screen === 'settings') {
-      if (choice.id === 'volume') {
-        this.game.hud.setToast('Use Left/Right to adjust volume.', 900);
-        return;
-      }
       if (choice.id === 'back') {
         this.screen = 'main';
         this.selection = 0;
         this._syncTitleUI();
         return;
       }
+      if (choice.id === 'volume') {
+        this.game.hud.setToast('Use Left/Right to adjust volume.', 900);
+        return;
+      }
     }
 
     if (this.screen === 'credits') {
-      // any confirm returns
       this.screen = 'main';
       this.selection = 0;
       this._syncTitleUI();

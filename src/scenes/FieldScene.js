@@ -17,7 +17,7 @@ export class FieldScene {
     this.displayName = 'Field';
     this.locationName = 'Gutterwake — East Canal (Prototype)';
 
-    this.baseHintText = 'Move: WASD/Arrows • Run: Shift • Interact: E';
+    this.baseHintText = 'Move: WASD/Arrows • Run: Shift • Interact: E • Menu: Esc • Items: I';
     this.hintText = this.baseHintText;
     this.statusText = 'Explore the prototype street.';
 
@@ -47,25 +47,17 @@ export class FieldScene {
     this.animLights = [];
     this.decorSparks = [];
 
-    // Fade-in from title
-    this._fade = {
-      active: false,
-      alpha: 0,
-      target: 0,
-      speed: 2.8
-    };
+    this._fade = { active: false, alpha: 0, target: 0, speed: 2.8 };
 
     // Interactables
     this.interactables = [];
     this.activeInteractable = null;
 
-    // Scene setup
     this._setupScene();
     this._setupFieldGeometry();
     this._setupPlayer();
     this._setupCamera();
 
-    // Add interactables (all using one system)
     this._addNoticePostInteractable();
     this._addChestInteractable();
     this._addGateInteractable();
@@ -88,7 +80,7 @@ export class FieldScene {
   }
 
   // ---------------------------
-  // Scene + Environment
+  // Environment
   // ---------------------------
 
   _setupScene() {
@@ -156,30 +148,25 @@ export class FieldScene {
     streetStrip.position.set(0, 0.02, -0.2);
     this.scene.add(streetStrip);
 
-    // Perimeter
     this._addWall({ x: 0, y: 1.25, z: -8.25, w: 24, h: 2.5, d: 0.5 });
     this._addWall({ x: 0, y: 1.25, z: 8.25, w: 24, h: 2.5, d: 0.5 });
     this._addWall({ x: -11.75, y: 1.25, z: 0, w: 0.5, h: 2.5, d: 16 });
     this._addWall({ x: 11.75, y: 1.25, z: 0, w: 0.5, h: 2.5, d: 16 });
 
-    // Props
     this._addCrateStack(-3.4, -1.2, 2);
     this._addCrateStack(4.0, 1.0, 3);
     this._addMachineBlock(0.8, 5.5, 1.8, 1.2, 1.1);
 
-    // Lamps
     this._addLamp(-8.2, -2.6, 0x77f6e2);
     this._addLamp(-2.2, 3.4, 0xc89bff);
     this._addLamp(5.3, -3.2, 0x77f6e2);
     this._addLamp(8.4, 2.8, 0xffc76a);
 
-    // Backdrop silhouettes
     this._addBackdropSilhouette(-7.5, -7.2, 2.2);
     this._addBackdropSilhouette(-2.4, -7.4, 3.0);
     this._addBackdropSilhouette(3.6, -7.1, 2.6);
     this._addBackdropSilhouette(8.5, -7.3, 3.2);
 
-    // Atmosphere motes
     this._spawnSparks(22);
   }
 
@@ -230,19 +217,15 @@ export class FieldScene {
   }
 
   // ---------------------------
-  // Interactable System
+  // Interactables
   // ---------------------------
 
   _registerInteractable(interactable) {
-    // interactable: { id, label, position: Vector3, radius, getHintText?, isEnabled?, onInteract?, update? }
     this.interactables.push(interactable);
   }
 
   _findActiveInteractable() {
-    // If dialogue is up, hide prompts and don't change active
-    if (this.game.dialogue?.isActive?.()) {
-      return null;
-    }
+    if (this.game.dialogue.isActive() || this.game.menu.isOpen()) return null;
 
     const p = this.player.position;
     let best = null;
@@ -258,7 +241,6 @@ export class FieldScene {
         bestDist = d;
       }
     }
-
     return best;
   }
 
@@ -271,7 +253,7 @@ export class FieldScene {
       this.hintText = hint;
       this.game.hud.setInteractPrompt({
         visible: true,
-        text: `${active.label}`
+        text: active.label
       });
     } else {
       this.hintText = this.baseHintText;
@@ -279,14 +261,9 @@ export class FieldScene {
     }
   }
 
-  // ---------------------------
-  // Interactable: Notice Post (Dialogue)
-  // ---------------------------
-
   _addNoticePostInteractable() {
     const pos = new THREE.Vector3(-6.2, 0, -0.4);
 
-    // Visual
     const postGeo = new THREE.CylinderGeometry(0.08, 0.1, 1.25, 10);
     const postMat = new THREE.MeshStandardMaterial({
       color: 0x3c434f,
@@ -323,11 +300,8 @@ export class FieldScene {
       label: 'Read Notice',
       position: pos,
       radius: 1.25,
-      plaque,
-      update: (dt) => {
-        // soft pulse
-        const e = 0.25 + Math.sin(this.elapsed * 2.2) * 0.08;
-        plaque.material.emissiveIntensity = e;
+      update: () => {
+        plaque.material.emissiveIntensity = 0.25 + Math.sin(this.elapsed * 2.2) * 0.08;
       },
       getHintText: () => 'Press E to read the posted notice.',
       onInteract: () => {
@@ -335,32 +309,17 @@ export class FieldScene {
 
         this.game.dialogue.start(
           [
-            {
-              speaker: 'Canal Notice',
-              text: 'RAIL CURFEW IN EFFECT. After the third bell, transit warrants are required. Unregistered routes will be sealed.'
-            },
-            {
-              speaker: 'Canal Notice',
-              text: 'Report missing ledger marks to the nearest Crown clerk. Unauthorized record correction is punishable by debt levy.'
-            },
-            {
-              speaker: 'Rian',
-              text: 'They call it “correction.” Like scraping rust off a blade. Like names were never flesh to begin with.'
-            }
+            { speaker: 'Canal Notice', text: 'RAIL CURFEW IN EFFECT. After the third bell, transit warrants are required. Unregistered routes will be sealed.' },
+            { speaker: 'Canal Notice', text: 'Report missing ledger marks to the nearest Crown clerk. Unauthorized record correction is punishable by debt levy.' },
+            { speaker: 'Rian', text: 'They call it “correction.” Like scraping rust off a blade. Like names were never flesh to begin with.' }
           ],
-          {
-            onClose: () => this.game.hud.setToast('The notice flutters back into place.', 900)
-          }
+          { onClose: () => this.game.hud.setToast('The notice flutters back into place.', 900) }
         );
       }
     };
 
     this._registerInteractable(notice);
   }
-
-  // ---------------------------
-  // Interactable: Chest (Loot + lid animation)
-  // ---------------------------
 
   _addChestInteractable() {
     const pos = new THREE.Vector3(6.3, 0, -4.2);
@@ -382,16 +341,14 @@ export class FieldScene {
       roughness: 0.78
     });
 
-    // Lid pivots from back edge (simple pivot object)
     const lidPivot = new THREE.Object3D();
-    lidPivot.position.set(pos.x, 0.45, pos.z + 0.3); // hinge line
+    lidPivot.position.set(pos.x, 0.45, pos.z + 0.3);
     this.scene.add(lidPivot);
 
     const lid = new THREE.Mesh(lidGeo, lidMat);
-    lid.position.set(0, 0.11, -0.3); // move lid so it hinges around pivot
+    lid.position.set(0, 0.11, -0.3);
     lidPivot.add(lid);
 
-    // Lock plate glow
     const lockGeo = new THREE.BoxGeometry(0.12, 0.12, 0.04);
     const lockMat = new THREE.MeshStandardMaterial({
       color: 0xbfa16a,
@@ -412,10 +369,10 @@ export class FieldScene {
       opening: false,
       lidPivot,
       lock,
-      lidOpenT: 0, // 0 closed -> 1 open
-      getHintText: () => (chest.opened ? 'Press E to check the empty chest.' : 'Press E to open the chest.'),
+      lidOpenT: 0,
+      getHintText: () => (chest.opened ? 'Press E to check the chest.' : 'Press E to open the chest.'),
       onInteract: () => {
-        if (this.game.dialogue.isActive()) return;
+        if (this.game.dialogue.isActive() || this.game.menu.isOpen()) return;
 
         if (chest.opened) {
           this.game.hud.setToast('It’s empty.', 900);
@@ -426,25 +383,21 @@ export class FieldScene {
         chest.opening = true;
         chest.lidOpenT = 0;
 
-        this.game.hud.setToast('Found: Ferric Salt x1', 1200);
+        // REAL inventory add + obtained popup
+        this.game.state.addItem('ferric_salt', 1);
+        this.game.itemPopup.enqueueObtained({ name: this.game.state.getItemDef('ferric_salt').name, qty: 1 });
       },
       update: (dt) => {
-        // pulse the lock when unopened
         if (!chest.opened) {
           chest.lock.material.emissiveIntensity = 0.18 + Math.sin(this.elapsed * 2.4) * 0.06;
         } else {
           chest.lock.material.emissiveIntensity = 0.08;
         }
 
-        // animate lid opening
         if (chest.opening) {
           chest.lidOpenT = clamp(chest.lidOpenT + dt * 1.8, 0, 1);
-          const angle = -Math.PI * 0.62 * chest.lidOpenT; // rotate up
-          chest.lidPivot.rotation.x = angle;
-
-          if (chest.lidOpenT >= 1) {
-            chest.opening = false;
-          }
+          chest.lidPivot.rotation.x = -Math.PI * 0.62 * chest.lidOpenT;
+          if (chest.lidOpenT >= 1) chest.opening = false;
         }
       }
     };
@@ -452,14 +405,9 @@ export class FieldScene {
     this._registerInteractable(chest);
   }
 
-  // ---------------------------
-  // Interactable: Gate (transition stub)
-  // ---------------------------
-
   _addGateInteractable() {
     const pos = new THREE.Vector3(0.0, 0, -7.7);
 
-    // Visual gate frame
     const frameGeo = new THREE.BoxGeometry(3.2, 2.2, 0.2);
     const frameMat = new THREE.MeshStandardMaterial({
       color: 0x1a202a,
@@ -470,7 +418,6 @@ export class FieldScene {
     frame.position.set(pos.x, 1.1, pos.z);
     this.scene.add(frame);
 
-    // Inner bars
     const barsGeo = new THREE.BoxGeometry(2.6, 1.7, 0.12);
     const barsMat = new THREE.MeshStandardMaterial({
       color: 0x2b313d,
@@ -481,7 +428,7 @@ export class FieldScene {
     bars.position.set(pos.x, 1.05, pos.z + 0.02);
     this.scene.add(bars);
 
-    const gate = {
+    this._registerInteractable({
       id: 'gate_001',
       label: 'Examine Gate',
       position: pos,
@@ -490,13 +437,11 @@ export class FieldScene {
       onInteract: () => {
         this.game.hud.setToast('The gate is sealed. (Map transition comes next)', 1400);
       }
-    };
-
-    this._registerInteractable(gate);
+    });
   }
 
   // ---------------------------
-  // Update Loop
+  // Update
   // ---------------------------
 
   update(dt) {
@@ -510,26 +455,19 @@ export class FieldScene {
     this._updateCamera(dt);
     this._updateAmbientFX(dt);
 
-    // Update interactables (animations)
-    for (const it of this.interactables) {
-      if (typeof it.update === 'function') it.update(dt);
-    }
+    for (const it of this.interactables) it.update?.(dt);
 
-    // Find nearest interactable
     const found = this._findActiveInteractable();
-
     if (found !== this.activeInteractable) {
       this.activeInteractable = found;
       this._applyInteractPrompt(found);
     }
 
-    // Interact
     if (this.activeInteractable && actions.interactPressed) {
       this.activeInteractable.onInteract?.();
     }
 
-    // If dialogue opened this frame, force-hide prompt
-    if (this.game.dialogue?.isActive?.()) {
+    if (this.game.dialogue.isActive() || this.game.menu.isOpen()) {
       this.game.hud.setInteractPrompt({ visible: false });
     }
   }
@@ -564,9 +502,7 @@ export class FieldScene {
 
       this._resolveCollisions();
 
-      const targetYaw = Math.atan2(x, z);
-      this.playerMesh.rotation.y = targetYaw;
-
+      this.playerMesh.rotation.y = Math.atan2(x, z);
       this.playerMesh.position.y = 0.35 + Math.sin(this.elapsed * 12.0) * 0.03;
     } else {
       this.playerMesh.position.y = 0.35 + Math.sin(this.elapsed * 3.5) * 0.01;
@@ -621,20 +557,11 @@ export class FieldScene {
   }
 
   _updateCamera(dt) {
-    this._cameraDesired.set(
-      this.player.position.x,
-      8.2,
-      this.player.position.z + 9.0
-    );
-
+    this._cameraDesired.set(this.player.position.x, 8.2, this.player.position.z + 9.0);
     const camLerp = 1 - Math.exp(-dt * 5.0);
     this.camera.position.lerp(this._cameraDesired, camLerp);
 
-    this._cameraLook.set(
-      this.player.position.x,
-      0.6,
-      this.player.position.z - 0.4
-    );
+    this._cameraLook.set(this.player.position.x, 0.6, this.player.position.z - 0.4);
     this.camera.lookAt(this._cameraLook);
   }
 
@@ -654,7 +581,7 @@ export class FieldScene {
   }
 
   // ---------------------------
-  // Helpers (props)
+  // Prop helpers
   // ---------------------------
 
   _addWall({ x, y, z, w, h, d }) {

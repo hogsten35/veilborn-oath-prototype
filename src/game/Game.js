@@ -1,11 +1,17 @@
 import * as THREE from 'three';
 import { StateManager } from './StateManager.js';
+import { GameState } from './GameState.js';
+
 import { BootScene } from '../scenes/BootScene.js';
 import { TitleScene } from '../scenes/TitleScene.js';
 import { FieldScene } from '../scenes/FieldScene.js';
+
 import { HUD } from '../ui/HUD.js';
 import { DialogueBox } from '../ui/DialogueBox.js';
 import { DialogueRunner } from './DialogueRunner.js';
+
+import { MenuOverlay } from '../ui/MenuOverlay.js';
+import { ItemPopup } from '../ui/ItemPopup.js';
 
 class KeyboardInput {
   constructor() {
@@ -44,10 +50,7 @@ class KeyboardInput {
 
     if (preventCodes.has(code)) event.preventDefault();
 
-    if (!this.down.has(code)) {
-      this.pressed.add(code);
-    }
-
+    if (!this.down.has(code)) this.pressed.add(code);
     this.down.add(code);
   }
 
@@ -99,7 +102,7 @@ class KeyboardInput {
       move: this.getMoveVector(),
       run: this.isDown('ShiftLeft', 'ShiftRight'),
 
-      // Menu navigation (one-press)
+      // Navigation (one-press)
       navUpPressed: this.wasPressed('ArrowUp', 'KeyW'),
       navDownPressed: this.wasPressed('ArrowDown', 'KeyS'),
       navLeftPressed: this.wasPressed('ArrowLeft', 'KeyA'),
@@ -108,7 +111,11 @@ class KeyboardInput {
       // Common actions (one-press)
       confirmPressed: this.wasPressed('Enter', 'Space'),
       cancelPressed: this.wasPressed('Escape', 'Backspace'),
-      interactPressed: this.wasPressed('KeyE', 'Enter')
+      interactPressed: this.wasPressed('KeyE', 'Enter'),
+
+      // Menu shortcuts
+      menuPressed: this.wasPressed('Escape'),
+      inventoryPressed: this.wasPressed('KeyI')
     };
   }
 }
@@ -117,6 +124,8 @@ export class Game {
   constructor({ mountEl, uiRootEl }) {
     this.mountEl = mountEl;
     this.uiRootEl = uiRootEl;
+
+    this.state = new GameState();
 
     this.clock = {
       running: false,
@@ -130,12 +139,26 @@ export class Game {
 
     this.input = new KeyboardInput();
 
-    // HUD
+    // UI layers
     this.hud = new HUD(this.uiRootEl);
 
-    // Dialogue UI + Runner (separate from HUD, but shares the same ui-root)
     this.dialogueBox = new DialogueBox(this.uiRootEl);
     this.dialogue = new DialogueRunner({ box: this.dialogueBox });
+
+    this.menu = new MenuOverlay(this.uiRootEl, {
+      onReturnToTitle: () => {
+        this.hud.setInteractPrompt?.({ visible: false });
+        this.stateManager.change('title');
+      },
+      onSave: () => {
+        this.hud.setToast('Save not implemented yet.', 1200);
+      },
+      onVolumeChange: (v) => {
+        this.state.settings.masterVolume = v;
+      }
+    });
+
+    this.itemPopup = new ItemPopup(this.uiRootEl);
 
     this.stateManager = new StateManager(this);
 
@@ -197,7 +220,6 @@ export class Game {
 
     this.stateManager.resize(width, height);
     this.hud.onResize(width, height);
-    this.dialogueBox?.onResize?.(width, height);
   }
 
   start() {
@@ -205,27 +227,16 @@ export class Game {
 
     this.input.attach();
 
-    // Mount UI layers
     this.hud.mount();
     this.dialogueBox.mount();
+    this.menu.mount();
+    this.itemPopup.mount();
 
     this.stateManager.change('boot');
 
     this.clock.running = true;
     this.clock.lastTimeMs = performance.now();
     this._rafId = requestAnimationFrame(this._boundLoop);
-  }
-
-  stop() {
-    this.clock.running = false;
-
-    if (this._rafId !== null) {
-      cancelAnimationFrame(this._rafId);
-      this._rafId = null;
-    }
-
-    this.input.detach();
-    window.removeEventListener('resize', this._boundResize);
   }
 
   _loop(nowMs) {
@@ -248,17 +259,52 @@ export class Game {
     while (this.clock.accumulator >= this.clock.fixedStep) {
       const dt = this.clock.fixedStep;
 
-      // Scene update
       this.stateManager.update(dt);
 
-      // Dialogue update (typewriter)
+      // Update dialogue + popups
       this.dialogue.update(dt);
+      this.itemPopup.update(dt);
 
-      // Dialogue input handling (confirm/cancel)
-      const actions = this.getInputActions();
+      // Keep menu data fresh
+      this.menu.setData({
+        inventory: this.state.getInventoryList(),
+        settings: this.state.settings
+      });
+
+      const actions = this._getRawActions();
+
+      // 1) Dialogue gets priority
       if (this.dialogue.isActive()) {
         if (actions.confirmPressed) this.dialogue.handleConfirm();
         if (actions.cancelPressed) this.dialogue.handleCancel();
+        this.clock.accumulator -= dt;
+        continue;
+      }
+
+      // 2) Menu toggle logic (fixes Esc opening + instant closing)
+      const inGameplay = this.stateManager.currentKey === 'field';
+
+      if (inGameplay) {
+        // Open menu
+        if (!this.menu.isOpen()) {
+          if (actions.inventoryPressed) {
+            this.hud.setInteractPrompt?.({ visible: false });
+            this.menu.open({ tabKey: 'items' });
+            // IMPORTANT: do NOT also pass this same Esc press into menu handling this frame
+          } else if (actions.menuPressed) {
+            this.hud.setInteractPrompt?.({ visible: false });
+            this.menu.open({ tabKey: 'items' });
+            // IMPORTANT: do NOT call menu.handleInput on the same frame
+          }
+        } else {
+          // Close menu with Esc
+          if (actions.menuPressed) {
+            this.menu.close();
+          } else {
+            // Let menu consume inputs (Up/Down/Left/Right/Enter/Backspace)
+            this.menu.handleInput(actions);
+          }
+        }
       }
 
       this.clock.accumulator -= dt;
@@ -274,23 +320,20 @@ export class Game {
     this._rafId = requestAnimationFrame(this._boundLoop);
   }
 
-  /**
-   * Returns actions, but automatically "locks" movement while dialogue is active.
-   * Dialogue still receives confirm/cancel.
-   */
-  getInputActions() {
-    const a = this.input.getActions();
+  _getRawActions() {
+    return this.input.getActions();
+  }
 
-    if (this.dialogue.isActive()) {
+  // Scene-facing actions: lock movement/interact while dialogue or menu open
+  getInputActions() {
+    const a = this._getRawActions();
+
+    if (this.dialogue.isActive() || this.menu.isOpen()) {
       return {
         ...a,
         move: { x: 0, z: 0 },
         run: false,
-        interactPressed: false,
-        navUpPressed: false,
-        navDownPressed: false,
-        navLeftPressed: false,
-        navRightPressed: false
+        interactPressed: false
       };
     }
 
