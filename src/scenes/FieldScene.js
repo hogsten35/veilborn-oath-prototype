@@ -39,10 +39,33 @@ export class FieldScene {
     this.animLights = [];
     this.decorSparks = [];
 
+    // Fade-in controller for scene transitions
+    this._fade = {
+      active: false,
+      alpha: 0,
+      target: 0,
+      speed: 2.8
+    };
+
     this._setupScene();
     this._setupFieldGeometry();
     this._setupPlayer();
     this._setupCamera();
+  }
+
+  enter(params = {}) {
+    this.game.hud.setMode('game');
+
+    if (params.fromTitle) {
+      this._fade.active = true;
+      this._fade.alpha = 1;
+      this._fade.target = 0;
+      this.game.hud.setFade(1);
+    } else {
+      this.game.hud.setFade(0);
+    }
+
+    this.game.hud.setToast('Entered Field Scene', 900);
   }
 
   _setupScene() {
@@ -57,7 +80,6 @@ export class FieldScene {
     veilGlow.position.set(0, 4.5, 0);
     this.scene.add(veilGlow);
 
-    // Very subtle ground haze plane for atmosphere
     const hazeGeo = new THREE.PlaneGeometry(30, 30);
     const hazeMat = new THREE.MeshBasicMaterial({
       color: 0x0d1116,
@@ -71,7 +93,6 @@ export class FieldScene {
   }
 
   _setupFieldGeometry() {
-    // Ground
     const groundGeo = new THREE.PlaneGeometry(24, 18, 1, 1);
     const groundMat = new THREE.MeshStandardMaterial({
       color: 0x171b22,
@@ -83,7 +104,6 @@ export class FieldScene {
     ground.position.y = 0;
     this.scene.add(ground);
 
-    // Canal strips (stylized placeholder)
     const canalGeo = new THREE.PlaneGeometry(24, 2.2);
     const canalMat = new THREE.MeshStandardMaterial({
       color: 0x10252b,
@@ -102,7 +122,6 @@ export class FieldScene {
     canal2.position.set(0, 0.01, 4.8);
     this.scene.add(canal2);
 
-    // Street center strip
     const stripGeo = new THREE.PlaneGeometry(22, 5.5);
     const stripMat = new THREE.MeshStandardMaterial({
       color: 0x1d232d,
@@ -114,30 +133,25 @@ export class FieldScene {
     streetStrip.position.set(0, 0.02, -0.2);
     this.scene.add(streetStrip);
 
-    // Perimeter walls (visual + collision)
     this._addWall({ x: 0, y: 1.25, z: -8.25, w: 24, h: 2.5, d: 0.5 });
     this._addWall({ x: 0, y: 1.25, z: 8.25, w: 24, h: 2.5, d: 0.5 });
     this._addWall({ x: -11.75, y: 1.25, z: 0, w: 0.5, h: 2.5, d: 16 });
     this._addWall({ x: 11.75, y: 1.25, z: 0, w: 0.5, h: 2.5, d: 16 });
 
-    // Walkway dividers / crates / machinery blockers
     this._addCrateStack(-3.4, -1.2, 2);
     this._addCrateStack(4.0, 1.0, 3);
     this._addMachineBlock(0.8, 5.5, 1.8, 1.2, 1.1);
 
-    // Lamps (visual + animated light)
     this._addLamp(-8.2, -2.6, 0x77f6e2);
     this._addLamp(-2.2, 3.4, 0xc89bff);
     this._addLamp(5.3, -3.2, 0x77f6e2);
     this._addLamp(8.4, 2.8, 0xffc76a);
 
-    // Backdrop silhouettes (industrial ruins)
     this._addBackdropSilhouette(-7.5, -7.2, 2.2);
     this._addBackdropSilhouette(-2.4, -7.4, 3.0);
     this._addBackdropSilhouette(3.6, -7.1, 2.6);
     this._addBackdropSilhouette(8.5, -7.3, 3.2);
 
-    // Small glowing motes for atmosphere
     this._spawnSparks(22);
   }
 
@@ -153,7 +167,7 @@ export class FieldScene {
 
     const coreGeo = new THREE.SphereGeometry(0.18, 16, 16);
     const coreMat = new THREE.MeshStandardMaterial({
-      color: 0xe4e2d6,
+      color: 0xe6e1d5,
       emissive: 0x1d1710,
       metalness: 0.05,
       roughness: 0.35
@@ -240,7 +254,6 @@ export class FieldScene {
     mesh.position.set(x, h / 2, z);
     this.scene.add(mesh);
 
-    // Add glowing panel
     const panelGeo = new THREE.BoxGeometry(w * 0.35, h * 0.2, 0.04);
     const panelMat = new THREE.MeshStandardMaterial({
       color: 0x7cefe0,
@@ -338,12 +351,10 @@ export class FieldScene {
     }
   }
 
-  enter() {
-    this.game.hud.setToast('Entered Field Scene', 900);
-  }
-
   update(dt) {
     this.elapsed += dt;
+
+    this._updateFade(dt);
 
     const actions = this.game.getInputActions();
     this._updatePlayer(dt, actions);
@@ -358,8 +369,22 @@ export class FieldScene {
     }
 
     if (actions.cancelPressed) {
-      this.game.hud.setToast('Menu system comes next (Phase 4+).', 1000);
+      this.game.hud.setToast('Menu system is coming next.', 900);
     }
+  }
+
+  _updateFade(dt) {
+    if (!this._fade.active) return;
+
+    const dir = this._fade.target > this._fade.alpha ? 1 : -1;
+    this._fade.alpha += dir * this._fade.speed * dt;
+
+    if (dir < 0 && this._fade.alpha <= this._fade.target) {
+      this._fade.alpha = this._fade.target;
+      this._fade.active = false;
+    }
+
+    this.game.hud.setFade(this._fade.alpha);
   }
 
   _updatePlayer(dt, actions) {
@@ -373,28 +398,22 @@ export class FieldScene {
       this.player.position.x += x * speed * dt;
       this.player.position.z += z * speed * dt;
 
-      // Soft world bounds
       this.player.position.x = clamp(this.player.position.x, -10.8, 10.8);
       this.player.position.z = clamp(this.player.position.z, -7.2, 7.2);
 
-      // Resolve collisions against blockers
       this._resolveCollisions();
 
-      // Face movement direction (simple yaw)
       const targetYaw = Math.atan2(x, z);
       this.playerMesh.rotation.y = targetYaw;
 
-      // Bobbing when moving
       this.playerMesh.position.y = 0.35 + Math.sin(this.elapsed * 12.0) * 0.03;
     } else {
       this.playerMesh.position.y = 0.35 + Math.sin(this.elapsed * 3.5) * 0.01;
     }
 
-    // Apply player position
     this.playerMesh.position.x = this.player.position.x;
     this.playerMesh.position.z = this.player.position.z;
 
-    // Decorative rotation/pulse
     this.playerRing.rotation.z += dt * 1.8;
     this.playerCore.material.emissiveIntensity = 0.35 + Math.sin(this.elapsed * 4) * 0.08;
   }
@@ -412,7 +431,6 @@ export class FieldScene {
       let distSq = dx * dx + dz * dz;
 
       if (distSq < radius * radius) {
-        // If exactly inside center line, push out by smallest axis
         if (distSq < 1e-10) {
           const toMinX = Math.abs(pos.x - box.minX);
           const toMaxX = Math.abs(box.maxX - pos.x);
@@ -442,7 +460,6 @@ export class FieldScene {
   }
 
   _updateCamera(dt) {
-    // Authored cinematic angle + light follow behavior
     this._cameraDesired.set(
       this.player.position.x + 0.0,
       8.2,
@@ -492,13 +509,9 @@ export class FieldScene {
   exit() {
     this.scene.traverse((obj) => {
       if (obj.isMesh) {
-        if (obj.geometry) obj.geometry.dispose();
-
-        if (Array.isArray(obj.material)) {
-          obj.material.forEach((m) => m?.dispose?.());
-        } else {
-          obj.material?.dispose?.();
-        }
+        obj.geometry?.dispose?.();
+        if (Array.isArray(obj.material)) obj.material.forEach((m) => m?.dispose?.());
+        else obj.material?.dispose?.();
       }
     });
   }

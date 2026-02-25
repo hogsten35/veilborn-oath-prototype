@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { StateManager } from './StateManager.js';
 import { BootScene } from '../scenes/BootScene.js';
+import { TitleScene } from '../scenes/TitleScene.js';
 import { FieldScene } from '../scenes/FieldScene.js';
 import { HUD } from '../ui/HUD.js';
 
@@ -75,10 +76,6 @@ class KeyboardInput {
     return codes.some((code) => this.pressed.has(code));
   }
 
-  wasReleased(...codes) {
-    return codes.some((code) => this.released.has(code));
-  }
-
   getMoveVector() {
     let x = 0;
     let z = 0;
@@ -88,7 +85,6 @@ class KeyboardInput {
     if (this.isDown('KeyW', 'ArrowUp')) z -= 1;
     if (this.isDown('KeyS', 'ArrowDown')) z += 1;
 
-    // Normalize diagonal movement
     if (x !== 0 && z !== 0) {
       const inv = 1 / Math.sqrt(2);
       x *= inv;
@@ -102,6 +98,14 @@ class KeyboardInput {
     return {
       move: this.getMoveVector(),
       run: this.isDown('ShiftLeft', 'ShiftRight'),
+
+      // Menu navigation (one-press)
+      navUpPressed: this.wasPressed('ArrowUp', 'KeyW'),
+      navDownPressed: this.wasPressed('ArrowDown', 'KeyS'),
+      navLeftPressed: this.wasPressed('ArrowLeft', 'KeyA'),
+      navRightPressed: this.wasPressed('ArrowRight', 'KeyD'),
+
+      // Common actions (one-press)
       confirmPressed: this.wasPressed('Enter', 'Space'),
       cancelPressed: this.wasPressed('Escape', 'Backspace'),
       interactPressed: this.wasPressed('KeyE', 'Enter')
@@ -137,7 +141,6 @@ export class Game {
     this._rafId = null;
     this._boundLoop = this._loop.bind(this);
 
-    // Shared scratch values (avoids extra allocations)
     this._viewport = {
       width: window.innerWidth,
       height: window.innerHeight
@@ -154,14 +157,11 @@ export class Game {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setClearColor(0x06070a, 1);
 
-    // Modern color/tone settings for better readability
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
 
-    // We can enable shadows later; kept off for starter perf simplicity
     renderer.shadowMap.enabled = false;
-
     renderer.domElement.classList.add('vo-canvas');
 
     return renderer;
@@ -169,6 +169,7 @@ export class Game {
 
   _registerScenes() {
     this.stateManager.register('boot', () => new BootScene(this));
+    this.stateManager.register('title', () => new TitleScene(this));
     this.stateManager.register('field', () => new FieldScene(this));
   }
 
@@ -197,6 +198,7 @@ export class Game {
     this.input.attach();
     this.hud.mount();
 
+    // Start at boot (short animation), then title menu.
     this.stateManager.change('boot');
 
     this.clock.running = true;
@@ -221,8 +223,6 @@ export class Game {
 
     let deltaSec = (nowMs - this.clock.lastTimeMs) / 1000;
     this.clock.lastTimeMs = nowMs;
-
-    // Clamp huge frame jumps (tab switch, lag spike)
     deltaSec = Math.min(deltaSec, 0.1);
 
     this.clock.accumulator += deltaSec;
@@ -230,34 +230,28 @@ export class Game {
     this.clock.frameCount += 1;
 
     if (this.clock.fpsTimer >= 0.25) {
-      this.clock.fps =
-        this.clock.frameCount / this.clock.fpsTimer;
+      this.clock.fps = this.clock.frameCount / this.clock.fpsTimer;
       this.clock.frameCount = 0;
       this.clock.fpsTimer = 0;
     }
 
-    // Fixed-step updates
     while (this.clock.accumulator >= this.clock.fixedStep) {
       this.stateManager.update(this.clock.fixedStep);
       this.clock.accumulator -= this.clock.fixedStep;
     }
 
-    // Render current scene
     const active = this.stateManager.getActiveRenderTarget();
     if (active) {
       this.renderer.render(active.scene, active.camera);
     }
 
-    // Update HUD after simulation/render so it reflects latest values
     const hudData = this.stateManager.getHUDData();
     this.hud.update({
       ...hudData,
       fps: this.clock.fps
     });
 
-    // Clear one-frame input (pressed/released)
     this.input.endFrame();
-
     this._rafId = requestAnimationFrame(this._boundLoop);
   }
 
@@ -266,9 +260,6 @@ export class Game {
   }
 
   getViewport() {
-    return {
-      width: this._viewport.width,
-      height: this._viewport.height
-    };
+    return { width: this._viewport.width, height: this._viewport.height };
   }
 }
