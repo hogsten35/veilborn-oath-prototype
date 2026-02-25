@@ -27,7 +27,11 @@ export class HUD {
       titleMenuOptions: [],
       settingsOptions: [],
       volumeValue: null,
-      volumeFill: null
+      volumeFill: null,
+
+      // NEW: interact prompt
+      interact: null,
+      interactText: null
     };
   }
 
@@ -73,7 +77,7 @@ export class HUD {
       <div class="vo-help-list">
         <div><span>Move</span><strong>WASD / Arrows</strong></div>
         <div><span>Run</span><strong>Shift</strong></div>
-        <div><span>Confirm</span><strong>Enter / Space</strong></div>
+        <div><span>Interact</span><strong>E</strong></div>
         <div><span>Cancel</span><strong>Esc</strong></div>
       </div>
       <div class="vo-divider"></div>
@@ -115,7 +119,7 @@ export class HUD {
       </div>
     `;
 
-    // Title screen
+    // Title screen (unchanged structure)
     const titleScreen = document.createElement('div');
     titleScreen.className = 'vo-title-screen';
     titleScreen.innerHTML = `
@@ -175,6 +179,18 @@ export class HUD {
       </div>
     `;
 
+    // NEW: Interact prompt
+    const interact = document.createElement('div');
+    interact.className = 'vo-interact';
+    interact.setAttribute('aria-hidden', 'true');
+    interact.innerHTML = `
+      <div class="vo-interact__pill">
+        <span class="vo-interact__glyph" aria-hidden="true">◆</span>
+        <span class="vo-interact__key">E</span>
+        <span class="vo-interact__text" data-role="interactText">Interact</span>
+      </div>
+    `;
+
     // Toast
     const toast = document.createElement('div');
     toast.className = 'vo-toast';
@@ -190,6 +206,7 @@ export class HUD {
     root.appendChild(topRight);
     root.appendChild(bottom);
     root.appendChild(titleScreen);
+    root.appendChild(interact);
     root.appendChild(toast);
     root.appendChild(fade);
 
@@ -215,6 +232,11 @@ export class HUD {
     this.elements.volumeValue = titleScreen.querySelector('[data-role="volumeVal"]');
     this.elements.volumeFill = titleScreen.querySelector('[data-role="volumeFill"]');
 
+    this.elements.interact = interact;
+    this.elements.interactText = interact.querySelector('[data-role="interactText"]');
+
+    this.setInteractPrompt({ visible: false });
+
     this.mounted = true;
   }
 
@@ -232,6 +254,9 @@ export class HUD {
     // Title visibility
     if (mode === 'title') this.elements.titleScreen.classList.add('is-visible');
     else this.elements.titleScreen.classList.remove('is-visible');
+
+    // Hide interact prompt outside game mode
+    if (mode !== 'game') this.setInteractPrompt({ visible: false });
   }
 
   setFade(alpha) {
@@ -239,14 +264,29 @@ export class HUD {
     this.elements.fade.style.opacity = String(clamp(alpha, 0, 1));
   }
 
+  setInteractPrompt({ visible, text = 'Interact' } = {}) {
+    if (!this.mounted || !this.elements.interact) return;
+
+    if (!visible || this.mode !== 'game') {
+      this.elements.interact.classList.remove('is-visible');
+      this.elements.interact.setAttribute('aria-hidden', 'true');
+      return;
+    }
+
+    if (this.elements.interactText) {
+      this.elements.interactText.textContent = text;
+    }
+
+    this.elements.interact.classList.add('is-visible');
+    this.elements.interact.setAttribute('aria-hidden', 'false');
+  }
+
   showTitleScreen({ screen = 'main', selection = 0, canContinue = false, masterVolume = 100 } = {}) {
     if (!this.mounted) return;
 
     // Enable/disable Continue
     const cont = this.elements.titleMenuOptions.find((n) => n.dataset.id === 'continue');
-    if (cont) {
-      cont.classList.toggle('is-disabled', !canContinue);
-    }
+    if (cont) cont.classList.toggle('is-disabled', !canContinue);
 
     // Switch visible section
     const title = this.elements.titleScreen;
@@ -262,21 +302,18 @@ export class HUD {
     if (this.elements.volumeFill) this.elements.volumeFill.style.width = `${vol}%`;
 
     // Selection highlight depends on screen
-    this._clearSelections();
+    for (const el of this.elements.titleMenuOptions) el.classList.remove('is-selected');
+    for (const el of this.elements.settingsOptions) el.classList.remove('is-selected');
+
     if (screen === 'settings') {
       const el = this.elements.settingsOptions[selection];
       if (el) el.classList.add('is-selected');
     } else if (screen === 'credits') {
-      // no selection needed
+      // no highlight
     } else {
       const el = this.elements.titleMenuOptions[selection];
       if (el) el.classList.add('is-selected');
     }
-  }
-
-  _clearSelections() {
-    for (const el of this.elements.titleMenuOptions) el.classList.remove('is-selected');
-    for (const el of this.elements.settingsOptions) el.classList.remove('is-selected');
   }
 
   update({ sceneName = '—', locationName = '—', statusText = '—', hintText = '', fps = 0 } = {}) {

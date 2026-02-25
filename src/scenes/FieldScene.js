@@ -16,7 +16,9 @@ export class FieldScene {
 
     this.displayName = 'Field';
     this.locationName = 'Gutterwake — East Canal (Prototype)';
-    this.hintText = 'Move: WASD/Arrows • Run: Shift • Interact: E';
+
+    this.baseHintText = 'Move: WASD/Arrows • Run: Shift • Interact: E';
+    this.hintText = this.baseHintText;
     this.statusText = 'Explore the prototype street.';
 
     this.scene = new THREE.Scene();
@@ -53,19 +55,20 @@ export class FieldScene {
       speed: 2.8
     };
 
-    // Interactable: Notice Post
-    this.notice = {
-      id: 'notice_post',
-      position: new THREE.Vector3(-6.2, 0, -0.4),
-      radius: 1.25,
-      lastShownHint: false
-    };
+    // Interactables
+    this.interactables = [];
+    this.activeInteractable = null;
 
+    // Scene setup
     this._setupScene();
     this._setupFieldGeometry();
     this._setupPlayer();
     this._setupCamera();
-    this._addNoticePost();
+
+    // Add interactables (all using one system)
+    this._addNoticePostInteractable();
+    this._addChestInteractable();
+    this._addGateInteractable();
   }
 
   enter(params = {}) {
@@ -81,7 +84,12 @@ export class FieldScene {
     }
 
     this.game.hud.setToast('Entered Field Scene', 900);
+    this.game.hud.setInteractPrompt({ visible: false });
   }
+
+  // ---------------------------
+  // Scene + Environment
+  // ---------------------------
 
   _setupScene() {
     const ambient = new THREE.AmbientLight(0x6f7d96, 0.45);
@@ -148,25 +156,30 @@ export class FieldScene {
     streetStrip.position.set(0, 0.02, -0.2);
     this.scene.add(streetStrip);
 
+    // Perimeter
     this._addWall({ x: 0, y: 1.25, z: -8.25, w: 24, h: 2.5, d: 0.5 });
     this._addWall({ x: 0, y: 1.25, z: 8.25, w: 24, h: 2.5, d: 0.5 });
     this._addWall({ x: -11.75, y: 1.25, z: 0, w: 0.5, h: 2.5, d: 16 });
     this._addWall({ x: 11.75, y: 1.25, z: 0, w: 0.5, h: 2.5, d: 16 });
 
+    // Props
     this._addCrateStack(-3.4, -1.2, 2);
     this._addCrateStack(4.0, 1.0, 3);
     this._addMachineBlock(0.8, 5.5, 1.8, 1.2, 1.1);
 
+    // Lamps
     this._addLamp(-8.2, -2.6, 0x77f6e2);
     this._addLamp(-2.2, 3.4, 0xc89bff);
     this._addLamp(5.3, -3.2, 0x77f6e2);
     this._addLamp(8.4, 2.8, 0xffc76a);
 
+    // Backdrop silhouettes
     this._addBackdropSilhouette(-7.5, -7.2, 2.2);
     this._addBackdropSilhouette(-2.4, -7.4, 3.0);
     this._addBackdropSilhouette(3.6, -7.1, 2.6);
     this._addBackdropSilhouette(8.5, -7.3, 3.2);
 
+    // Atmosphere motes
     this._spawnSparks(22);
   }
 
@@ -216,7 +229,64 @@ export class FieldScene {
     this.camera.lookAt(0, 0.5, 0);
   }
 
-  _addNoticePost() {
+  // ---------------------------
+  // Interactable System
+  // ---------------------------
+
+  _registerInteractable(interactable) {
+    // interactable: { id, label, position: Vector3, radius, getHintText?, isEnabled?, onInteract?, update? }
+    this.interactables.push(interactable);
+  }
+
+  _findActiveInteractable() {
+    // If dialogue is up, hide prompts and don't change active
+    if (this.game.dialogue?.isActive?.()) {
+      return null;
+    }
+
+    const p = this.player.position;
+    let best = null;
+    let bestDist = Infinity;
+
+    for (const it of this.interactables) {
+      const enabled = typeof it.isEnabled === 'function' ? it.isEnabled() : true;
+      if (!enabled) continue;
+
+      const d = dist2D(p, it.position);
+      if (d <= it.radius && d < bestDist) {
+        best = it;
+        bestDist = d;
+      }
+    }
+
+    return best;
+  }
+
+  _applyInteractPrompt(active) {
+    if (active) {
+      const hint = typeof active.getHintText === 'function'
+        ? active.getHintText()
+        : `Press E to ${active.label}.`;
+
+      this.hintText = hint;
+      this.game.hud.setInteractPrompt({
+        visible: true,
+        text: `${active.label}`
+      });
+    } else {
+      this.hintText = this.baseHintText;
+      this.game.hud.setInteractPrompt({ visible: false });
+    }
+  }
+
+  // ---------------------------
+  // Interactable: Notice Post (Dialogue)
+  // ---------------------------
+
+  _addNoticePostInteractable() {
+    const pos = new THREE.Vector3(-6.2, 0, -0.4);
+
+    // Visual
     const postGeo = new THREE.CylinderGeometry(0.08, 0.1, 1.25, 10);
     const postMat = new THREE.MeshStandardMaterial({
       color: 0x3c434f,
@@ -224,7 +294,7 @@ export class FieldScene {
       roughness: 0.75
     });
     const post = new THREE.Mesh(postGeo, postMat);
-    post.position.set(this.notice.position.x, 0.62, this.notice.position.z);
+    post.position.set(pos.x, 0.62, pos.z);
     this.scene.add(post);
 
     const boardGeo = new THREE.BoxGeometry(0.72, 0.42, 0.06);
@@ -234,7 +304,7 @@ export class FieldScene {
       roughness: 0.95
     });
     const board = new THREE.Mesh(boardGeo, boardMat);
-    board.position.set(this.notice.position.x, 1.05, this.notice.position.z);
+    board.position.set(pos.x, 1.05, pos.z);
     this.scene.add(board);
 
     const plaqueGeo = new THREE.PlaneGeometry(0.62, 0.3);
@@ -248,8 +318,344 @@ export class FieldScene {
     plaque.position.set(0, 0, 0.04);
     board.add(plaque);
 
-    this.noticeMesh = { post, board, plaque };
+    const notice = {
+      id: 'notice_post',
+      label: 'Read Notice',
+      position: pos,
+      radius: 1.25,
+      plaque,
+      update: (dt) => {
+        // soft pulse
+        const e = 0.25 + Math.sin(this.elapsed * 2.2) * 0.08;
+        plaque.material.emissiveIntensity = e;
+      },
+      getHintText: () => 'Press E to read the posted notice.',
+      onInteract: () => {
+        if (this.game.dialogue.isActive()) return;
+
+        this.game.dialogue.start(
+          [
+            {
+              speaker: 'Canal Notice',
+              text: 'RAIL CURFEW IN EFFECT. After the third bell, transit warrants are required. Unregistered routes will be sealed.'
+            },
+            {
+              speaker: 'Canal Notice',
+              text: 'Report missing ledger marks to the nearest Crown clerk. Unauthorized record correction is punishable by debt levy.'
+            },
+            {
+              speaker: 'Rian',
+              text: 'They call it “correction.” Like scraping rust off a blade. Like names were never flesh to begin with.'
+            }
+          ],
+          {
+            onClose: () => this.game.hud.setToast('The notice flutters back into place.', 900)
+          }
+        );
+      }
+    };
+
+    this._registerInteractable(notice);
   }
+
+  // ---------------------------
+  // Interactable: Chest (Loot + lid animation)
+  // ---------------------------
+
+  _addChestInteractable() {
+    const pos = new THREE.Vector3(6.3, 0, -4.2);
+
+    const baseGeo = new THREE.BoxGeometry(0.9, 0.45, 0.6);
+    const baseMat = new THREE.MeshStandardMaterial({
+      color: 0x2b2f38,
+      metalness: 0.25,
+      roughness: 0.7
+    });
+    const base = new THREE.Mesh(baseGeo, baseMat);
+    base.position.set(pos.x, 0.225, pos.z);
+    this.scene.add(base);
+
+    const lidGeo = new THREE.BoxGeometry(0.9, 0.22, 0.62);
+    const lidMat = new THREE.MeshStandardMaterial({
+      color: 0x3a2f24,
+      metalness: 0.15,
+      roughness: 0.78
+    });
+
+    // Lid pivots from back edge (simple pivot object)
+    const lidPivot = new THREE.Object3D();
+    lidPivot.position.set(pos.x, 0.45, pos.z + 0.3); // hinge line
+    this.scene.add(lidPivot);
+
+    const lid = new THREE.Mesh(lidGeo, lidMat);
+    lid.position.set(0, 0.11, -0.3); // move lid so it hinges around pivot
+    lidPivot.add(lid);
+
+    // Lock plate glow
+    const lockGeo = new THREE.BoxGeometry(0.12, 0.12, 0.04);
+    const lockMat = new THREE.MeshStandardMaterial({
+      color: 0xbfa16a,
+      emissive: 0x2b2113,
+      metalness: 0.65,
+      roughness: 0.35
+    });
+    const lock = new THREE.Mesh(lockGeo, lockMat);
+    lock.position.set(pos.x, 0.27, pos.z + 0.32);
+    this.scene.add(lock);
+
+    const chest = {
+      id: 'chest_001',
+      label: 'Open Chest',
+      position: pos,
+      radius: 1.15,
+      opened: false,
+      opening: false,
+      lidPivot,
+      lock,
+      lidOpenT: 0, // 0 closed -> 1 open
+      getHintText: () => (chest.opened ? 'Press E to check the empty chest.' : 'Press E to open the chest.'),
+      onInteract: () => {
+        if (this.game.dialogue.isActive()) return;
+
+        if (chest.opened) {
+          this.game.hud.setToast('It’s empty.', 900);
+          return;
+        }
+
+        chest.opened = true;
+        chest.opening = true;
+        chest.lidOpenT = 0;
+
+        this.game.hud.setToast('Found: Ferric Salt x1', 1200);
+      },
+      update: (dt) => {
+        // pulse the lock when unopened
+        if (!chest.opened) {
+          chest.lock.material.emissiveIntensity = 0.18 + Math.sin(this.elapsed * 2.4) * 0.06;
+        } else {
+          chest.lock.material.emissiveIntensity = 0.08;
+        }
+
+        // animate lid opening
+        if (chest.opening) {
+          chest.lidOpenT = clamp(chest.lidOpenT + dt * 1.8, 0, 1);
+          const angle = -Math.PI * 0.62 * chest.lidOpenT; // rotate up
+          chest.lidPivot.rotation.x = angle;
+
+          if (chest.lidOpenT >= 1) {
+            chest.opening = false;
+          }
+        }
+      }
+    };
+
+    this._registerInteractable(chest);
+  }
+
+  // ---------------------------
+  // Interactable: Gate (transition stub)
+  // ---------------------------
+
+  _addGateInteractable() {
+    const pos = new THREE.Vector3(0.0, 0, -7.7);
+
+    // Visual gate frame
+    const frameGeo = new THREE.BoxGeometry(3.2, 2.2, 0.2);
+    const frameMat = new THREE.MeshStandardMaterial({
+      color: 0x1a202a,
+      metalness: 0.15,
+      roughness: 0.9
+    });
+    const frame = new THREE.Mesh(frameGeo, frameMat);
+    frame.position.set(pos.x, 1.1, pos.z);
+    this.scene.add(frame);
+
+    // Inner bars
+    const barsGeo = new THREE.BoxGeometry(2.6, 1.7, 0.12);
+    const barsMat = new THREE.MeshStandardMaterial({
+      color: 0x2b313d,
+      metalness: 0.55,
+      roughness: 0.35
+    });
+    const bars = new THREE.Mesh(barsGeo, barsMat);
+    bars.position.set(pos.x, 1.05, pos.z + 0.02);
+    this.scene.add(bars);
+
+    const gate = {
+      id: 'gate_001',
+      label: 'Examine Gate',
+      position: pos,
+      radius: 1.6,
+      getHintText: () => 'Press E to examine the sealed gate.',
+      onInteract: () => {
+        this.game.hud.setToast('The gate is sealed. (Map transition comes next)', 1400);
+      }
+    };
+
+    this._registerInteractable(gate);
+  }
+
+  // ---------------------------
+  // Update Loop
+  // ---------------------------
+
+  update(dt) {
+    this.elapsed += dt;
+
+    this._updateFade(dt);
+
+    const actions = this.game.getInputActions();
+
+    this._updatePlayer(dt, actions);
+    this._updateCamera(dt);
+    this._updateAmbientFX(dt);
+
+    // Update interactables (animations)
+    for (const it of this.interactables) {
+      if (typeof it.update === 'function') it.update(dt);
+    }
+
+    // Find nearest interactable
+    const found = this._findActiveInteractable();
+
+    if (found !== this.activeInteractable) {
+      this.activeInteractable = found;
+      this._applyInteractPrompt(found);
+    }
+
+    // Interact
+    if (this.activeInteractable && actions.interactPressed) {
+      this.activeInteractable.onInteract?.();
+    }
+
+    // If dialogue opened this frame, force-hide prompt
+    if (this.game.dialogue?.isActive?.()) {
+      this.game.hud.setInteractPrompt({ visible: false });
+    }
+  }
+
+  _updateFade(dt) {
+    if (!this._fade.active) return;
+
+    const dir = this._fade.target > this._fade.alpha ? 1 : -1;
+    this._fade.alpha += dir * this._fade.speed * dt;
+
+    if (dir < 0 && this._fade.alpha <= this._fade.target) {
+      this._fade.alpha = this._fade.target;
+      this._fade.active = false;
+    }
+
+    this.game.hud.setFade(this._fade.alpha);
+  }
+
+  _updatePlayer(dt, actions) {
+    const { x, z } = actions.move;
+    const moving = x !== 0 || z !== 0;
+
+    let speed = this.player.walkSpeed;
+    if (actions.run) speed *= this.player.runMultiplier;
+
+    if (moving) {
+      this.player.position.x += x * speed * dt;
+      this.player.position.z += z * speed * dt;
+
+      this.player.position.x = clamp(this.player.position.x, -10.8, 10.8);
+      this.player.position.z = clamp(this.player.position.z, -7.2, 7.2);
+
+      this._resolveCollisions();
+
+      const targetYaw = Math.atan2(x, z);
+      this.playerMesh.rotation.y = targetYaw;
+
+      this.playerMesh.position.y = 0.35 + Math.sin(this.elapsed * 12.0) * 0.03;
+    } else {
+      this.playerMesh.position.y = 0.35 + Math.sin(this.elapsed * 3.5) * 0.01;
+    }
+
+    this.playerMesh.position.x = this.player.position.x;
+    this.playerMesh.position.z = this.player.position.z;
+
+    this.playerRing.rotation.z += dt * 1.8;
+    this.playerCore.material.emissiveIntensity = 0.35 + Math.sin(this.elapsed * 4) * 0.08;
+  }
+
+  _resolveCollisions() {
+    const pos = this.player.position;
+    const radius = this.player.radius;
+
+    for (const box of this.blockers) {
+      const closestX = clamp(pos.x, box.minX, box.maxX);
+      const closestZ = clamp(pos.z, box.minZ, box.maxZ);
+
+      let dx = pos.x - closestX;
+      let dz = pos.z - closestZ;
+      let distSq = dx * dx + dz * dz;
+
+      if (distSq < radius * radius) {
+        if (distSq < 1e-10) {
+          const toMinX = Math.abs(pos.x - box.minX);
+          const toMaxX = Math.abs(box.maxX - pos.x);
+          const toMinZ = Math.abs(pos.z - box.minZ);
+          const toMaxZ = Math.abs(box.maxZ - pos.z);
+
+          const smallest = Math.min(toMinX, toMaxX, toMinZ, toMaxZ);
+
+          if (smallest === toMinX) pos.x = box.minX - radius;
+          else if (smallest === toMaxX) pos.x = box.maxX + radius;
+          else if (smallest === toMinZ) pos.z = box.minZ - radius;
+          else pos.z = box.maxZ + radius;
+
+          continue;
+        }
+
+        const dist = Math.sqrt(distSq);
+        const overlap = radius - dist;
+
+        dx /= dist;
+        dz /= dist;
+
+        pos.x += dx * overlap;
+        pos.z += dz * overlap;
+      }
+    }
+  }
+
+  _updateCamera(dt) {
+    this._cameraDesired.set(
+      this.player.position.x,
+      8.2,
+      this.player.position.z + 9.0
+    );
+
+    const camLerp = 1 - Math.exp(-dt * 5.0);
+    this.camera.position.lerp(this._cameraDesired, camLerp);
+
+    this._cameraLook.set(
+      this.player.position.x,
+      0.6,
+      this.player.position.z - 0.4
+    );
+    this.camera.lookAt(this._cameraLook);
+  }
+
+  _updateAmbientFX(dt) {
+    for (const entry of this.animLights) {
+      const pulse = Math.sin(this.elapsed * entry.speed + entry.phase) * 0.15;
+      entry.light.intensity = entry.baseIntensity + pulse;
+      entry.glow.material.emissiveIntensity = 0.35 + (pulse + 0.15) * 0.7;
+    }
+
+    for (const spark of this.decorSparks) {
+      spark.phase += dt * spark.speed * 4.0;
+      spark.mesh.position.y = spark.y + Math.sin(spark.phase) * 0.08;
+      spark.mesh.position.x = spark.x + Math.cos(spark.phase * 0.5) * 0.04;
+      spark.mesh.position.z = spark.z + Math.sin(spark.phase * 0.7) * 0.04;
+    }
+  }
+
+  // ---------------------------
+  // Helpers (props)
+  // ---------------------------
 
   _addWall({ x, y, z, w, h, d }) {
     const geo = new THREE.BoxGeometry(w, h, d);
@@ -401,182 +807,6 @@ export class FieldScene {
     }
   }
 
-  update(dt) {
-    this.elapsed += dt;
-
-    this._updateFade(dt);
-
-    const actions = this.game.getInputActions();
-
-    // Movement + camera + ambience (movement already locked by Game during dialogue)
-    this._updatePlayer(dt, actions);
-    this._updateCamera(dt);
-    this._updateAmbientFX(dt);
-
-    // Notice post interaction
-    const p = this.player.position;
-    const nearNotice = dist2D(p, this.notice.position) <= this.notice.radius;
-
-    if (nearNotice) {
-      this.hintText = 'Press E to read the posted notice.';
-      if (actions.interactPressed) {
-        this._startNoticeDialogue();
-      }
-    } else {
-      this.hintText = 'Move: WASD/Arrows • Run: Shift • Interact: E';
-    }
-  }
-
-  _startNoticeDialogue() {
-    if (this.game.dialogue.isActive()) return;
-
-    this.game.dialogue.start(
-      [
-        {
-          speaker: 'Canal Notice',
-          text: 'RAIL CURFEW IN EFFECT. After the third bell, transit warrants are required. Unregistered routes will be sealed.'
-        },
-        {
-          speaker: 'Canal Notice',
-          text: 'Report missing ledger marks to the nearest Crown clerk. Unauthorized record correction is punishable by debt levy.'
-        },
-        {
-          speaker: 'Rian',
-          text: 'They call it “correction.” Like scraping rust off a blade. Like names were never flesh to begin with.'
-        }
-      ],
-      {
-        onClose: () => {
-          this.game.hud.setToast('The notice flutters back into place.', 900);
-        }
-      }
-    );
-  }
-
-  _updateFade(dt) {
-    if (!this._fade.active) return;
-
-    const dir = this._fade.target > this._fade.alpha ? 1 : -1;
-    this._fade.alpha += dir * this._fade.speed * dt;
-
-    if (dir < 0 && this._fade.alpha <= this._fade.target) {
-      this._fade.alpha = this._fade.target;
-      this._fade.active = false;
-    }
-
-    this.game.hud.setFade(this._fade.alpha);
-  }
-
-  _updatePlayer(dt, actions) {
-    const { x, z } = actions.move;
-    const moving = x !== 0 || z !== 0;
-
-    let speed = this.player.walkSpeed;
-    if (actions.run) speed *= this.player.runMultiplier;
-
-    if (moving) {
-      this.player.position.x += x * speed * dt;
-      this.player.position.z += z * speed * dt;
-
-      this.player.position.x = clamp(this.player.position.x, -10.8, 10.8);
-      this.player.position.z = clamp(this.player.position.z, -7.2, 7.2);
-
-      this._resolveCollisions();
-
-      const targetYaw = Math.atan2(x, z);
-      this.playerMesh.rotation.y = targetYaw;
-      this.playerMesh.position.y = 0.35 + Math.sin(this.elapsed * 12.0) * 0.03;
-    } else {
-      this.playerMesh.position.y = 0.35 + Math.sin(this.elapsed * 3.5) * 0.01;
-    }
-
-    this.playerMesh.position.x = this.player.position.x;
-    this.playerMesh.position.z = this.player.position.z;
-
-    this.playerRing.rotation.z += dt * 1.8;
-    this.playerCore.material.emissiveIntensity = 0.35 + Math.sin(this.elapsed * 4) * 0.08;
-  }
-
-  _resolveCollisions() {
-    const pos = this.player.position;
-    const radius = this.player.radius;
-
-    for (const box of this.blockers) {
-      const closestX = clamp(pos.x, box.minX, box.maxX);
-      const closestZ = clamp(pos.z, box.minZ, box.maxZ);
-
-      let dx = pos.x - closestX;
-      let dz = pos.z - closestZ;
-      let distSq = dx * dx + dz * dz;
-
-      if (distSq < radius * radius) {
-        if (distSq < 1e-10) {
-          const toMinX = Math.abs(pos.x - box.minX);
-          const toMaxX = Math.abs(box.maxX - pos.x);
-          const toMinZ = Math.abs(pos.z - box.minZ);
-          const toMaxZ = Math.abs(box.maxZ - pos.z);
-
-          const smallest = Math.min(toMinX, toMaxX, toMinZ, toMaxZ);
-
-          if (smallest === toMinX) pos.x = box.minX - radius;
-          else if (smallest === toMaxX) pos.x = box.maxX + radius;
-          else if (smallest === toMinZ) pos.z = box.minZ - radius;
-          else pos.z = box.maxZ + radius;
-
-          continue;
-        }
-
-        const dist = Math.sqrt(distSq);
-        const overlap = radius - dist;
-
-        dx /= dist;
-        dz /= dist;
-
-        pos.x += dx * overlap;
-        pos.z += dz * overlap;
-      }
-    }
-  }
-
-  _updateCamera(dt) {
-    this._cameraDesired.set(
-      this.player.position.x + 0.0,
-      8.2,
-      this.player.position.z + 9.0
-    );
-
-    const camLerp = 1 - Math.exp(-dt * 5.0);
-    this.camera.position.lerp(this._cameraDesired, camLerp);
-
-    this._cameraLook.set(
-      this.player.position.x,
-      0.6,
-      this.player.position.z - 0.4
-    );
-    this.camera.lookAt(this._cameraLook);
-  }
-
-  _updateAmbientFX(dt) {
-    // Notice post plaque pulse
-    if (this.noticeMesh?.plaque?.material) {
-      const e = 0.25 + Math.sin(this.elapsed * 2.2) * 0.08;
-      this.noticeMesh.plaque.material.emissiveIntensity = e;
-    }
-
-    for (const entry of this.animLights) {
-      const pulse = Math.sin(this.elapsed * entry.speed + entry.phase) * 0.15;
-      entry.light.intensity = entry.baseIntensity + pulse;
-      entry.glow.material.emissiveIntensity = 0.35 + (pulse + 0.15) * 0.7;
-    }
-
-    for (const spark of this.decorSparks) {
-      spark.phase += dt * spark.speed * 4.0;
-      spark.mesh.position.y = spark.y + Math.sin(spark.phase) * 0.08;
-      spark.mesh.position.x = spark.x + Math.cos(spark.phase * 0.5) * 0.04;
-      spark.mesh.position.z = spark.z + Math.sin(spark.phase * 0.7) * 0.04;
-    }
-  }
-
   onResize(width, height) {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
@@ -592,6 +822,8 @@ export class FieldScene {
   }
 
   exit() {
+    this.game.hud.setInteractPrompt({ visible: false });
+
     this.scene.traverse((obj) => {
       if (obj.isMesh) {
         obj.geometry?.dispose?.();
