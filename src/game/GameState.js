@@ -1,6 +1,11 @@
+import { WorldState } from './WorldState.js';
+
 export class GameState {
   constructor() {
     this.flags = new Set();
+
+    // World helper sits on top of the flags Set
+    this.world = new WorldState(this.flags);
 
     // Inventory: Map<itemId, qty>
     this.inventory = new Map();
@@ -30,7 +35,7 @@ export class GameState {
     };
   }
 
-  // -------- Flags --------
+  // -------- Flags (still available if you need them) --------
   hasFlag(flag) {
     return this.flags.has(flag);
   }
@@ -64,23 +69,14 @@ export class GameState {
   }
 
   getItemDef(itemId) {
-    return this.items[itemId] || {
-      id: itemId,
-      name: itemId,
-      desc: 'Unknown item.'
-    };
+    return this.items[itemId] || { id: itemId, name: itemId, desc: 'Unknown item.' };
   }
 
   getInventoryList() {
     const out = [];
     for (const [id, qty] of this.inventory.entries()) {
       const def = this.getItemDef(id);
-      out.push({
-        id,
-        name: def.name,
-        qty,
-        desc: def.desc
-      });
+      out.push({ id, name: def.name, qty, desc: def.desc });
     }
     out.sort((a, b) => a.name.localeCompare(b.name));
     return out;
@@ -92,6 +88,9 @@ export class GameState {
 
     this.flags.clear();
     this.inventory.clear();
+
+    // Re-attach WorldState to the SAME Set (still fine)
+    this.world = new WorldState(this.flags);
 
     this.settings = keepSettings;
     this.player = { field: { x: 0, z: 0 } };
@@ -146,6 +145,9 @@ export class GameState {
       const pz = Number(data.player?.field?.z);
       this.player.field.x = Number.isFinite(px) ? px : 0;
       this.player.field.z = Number.isFinite(pz) ? pz : 0;
+
+      // Rebuild world helper (still backed by same Set)
+      this.world = new WorldState(this.flags);
 
       return true;
     } catch {

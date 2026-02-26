@@ -14,6 +14,9 @@ export class FieldScene {
   constructor(game) {
     this.game = game;
 
+    // Zone ID is the KEY to making world state scalable across maps
+    this.zoneId = 'gutterwake_east_canal';
+
     this.displayName = 'Field';
     this.locationName = 'Gutterwake — East Canal (Prototype)';
 
@@ -41,10 +44,7 @@ export class FieldScene {
     this._cameraDesired = new THREE.Vector3();
     this._cameraLook = new THREE.Vector3();
 
-    this.blockers = [];
-    this.animLights = [];
     this.decorSparks = [];
-
     this._fade = { active: false, alpha: 0, target: 0, speed: 2.8 };
 
     this.interactables = [];
@@ -63,7 +63,6 @@ export class FieldScene {
   enter(params = {}) {
     this.game.hud.setMode('game');
 
-    // If we loaded, refresh position
     if (params.fromLoad) {
       const startX = Number(this.game.state.player.field?.x) || 0;
       const startZ = Number(this.game.state.player.field?.z) || 0;
@@ -87,8 +86,7 @@ export class FieldScene {
   }
 
   _setupScene() {
-    const ambient = new THREE.AmbientLight(0x6f7d96, 0.45);
-    this.scene.add(ambient);
+    this.scene.add(new THREE.AmbientLight(0x6f7d96, 0.45));
 
     const moonKey = new THREE.DirectionalLight(0xa9c6ff, 0.8);
     moonKey.position.set(-5, 8, 3);
@@ -97,24 +95,16 @@ export class FieldScene {
     const veilGlow = new THREE.PointLight(0x55e6d6, 0.35, 30);
     veilGlow.position.set(0, 4.5, 0);
     this.scene.add(veilGlow);
-
-    const hazeGeo = new THREE.PlaneGeometry(30, 30);
-    const hazeMat = new THREE.MeshBasicMaterial({ color: 0x0d1116, transparent: true, opacity: 0.2 });
-    const haze = new THREE.Mesh(hazeGeo, hazeMat);
-    haze.rotation.x = -Math.PI / 2;
-    haze.position.y = 0.02;
-    this.scene.add(haze);
   }
 
   _setupFieldGeometry() {
-    const groundGeo = new THREE.PlaneGeometry(24, 18, 1, 1);
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x171b22, metalness: 0.06, roughness: 0.9 });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(24, 18, 1, 1),
+      new THREE.MeshStandardMaterial({ color: 0x171b22, metalness: 0.06, roughness: 0.9 })
+    );
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = 0;
     this.scene.add(ground);
 
-    const canalGeo = new THREE.PlaneGeometry(24, 2.2);
     const canalMat = new THREE.MeshStandardMaterial({
       color: 0x10252b,
       emissive: 0x071316,
@@ -122,55 +112,50 @@ export class FieldScene {
       roughness: 0.85
     });
 
-    const canal1 = new THREE.Mesh(canalGeo, canalMat);
+    const canal1 = new THREE.Mesh(new THREE.PlaneGeometry(24, 2.2), canalMat);
     canal1.rotation.x = -Math.PI / 2;
     canal1.position.set(0, 0.01, -5.3);
     this.scene.add(canal1);
 
-    const canal2 = new THREE.Mesh(canalGeo, canalMat.clone());
+    const canal2 = new THREE.Mesh(new THREE.PlaneGeometry(24, 2.2), canalMat.clone());
     canal2.rotation.x = -Math.PI / 2;
     canal2.position.set(0, 0.01, 4.8);
     this.scene.add(canal2);
 
-    const stripGeo = new THREE.PlaneGeometry(22, 5.5);
-    const stripMat = new THREE.MeshStandardMaterial({ color: 0x1d232d, metalness: 0.08, roughness: 0.82 });
-    const streetStrip = new THREE.Mesh(stripGeo, stripMat);
+    const streetStrip = new THREE.Mesh(
+      new THREE.PlaneGeometry(22, 5.5),
+      new THREE.MeshStandardMaterial({ color: 0x1d232d, metalness: 0.08, roughness: 0.82 })
+    );
     streetStrip.rotation.x = -Math.PI / 2;
     streetStrip.position.set(0, 0.02, -0.2);
     this.scene.add(streetStrip);
 
+    // Visual boundaries (movement clamp does the “collision” for now)
     this._addWall({ x: 0, y: 1.25, z: -8.25, w: 24, h: 2.5, d: 0.5 });
     this._addWall({ x: 0, y: 1.25, z: 8.25, w: 24, h: 2.5, d: 0.5 });
     this._addWall({ x: -11.75, y: 1.25, z: 0, w: 0.5, h: 2.5, d: 16 });
     this._addWall({ x: 11.75, y: 1.25, z: 0, w: 0.5, h: 2.5, d: 16 });
 
-    this._spawnSparks(22);
+    this._spawnSparks(18);
   }
 
   _setupPlayer() {
-    const baseGeo = new THREE.CylinderGeometry(0.35, 0.42, 0.7, 10);
-    const baseMat = new THREE.MeshStandardMaterial({ color: 0x2b313d, metalness: 0.1, roughness: 0.75 });
-    const base = new THREE.Mesh(baseGeo, baseMat);
+    const base = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.35, 0.42, 0.7, 10),
+      new THREE.MeshStandardMaterial({ color: 0x2b313d, metalness: 0.1, roughness: 0.75 })
+    );
     base.position.copy(this.player.position);
 
-    const coreGeo = new THREE.SphereGeometry(0.18, 16, 16);
-    const coreMat = new THREE.MeshStandardMaterial({
-      color: 0xe6e1d5,
-      emissive: 0x1d1710,
-      metalness: 0.05,
-      roughness: 0.35
-    });
-    const core = new THREE.Mesh(coreGeo, coreMat);
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 16, 16),
+      new THREE.MeshStandardMaterial({ color: 0xe6e1d5, emissive: 0x1d1710, metalness: 0.05, roughness: 0.35 })
+    );
     core.position.set(0, 0.32, 0);
 
-    const ringGeo = new THREE.TorusGeometry(0.28, 0.03, 8, 24);
-    const ringMat = new THREE.MeshStandardMaterial({
-      color: 0xba9560,
-      emissive: 0x261b11,
-      metalness: 0.7,
-      roughness: 0.3
-    });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.28, 0.03, 8, 24),
+      new THREE.MeshStandardMaterial({ color: 0xba9560, emissive: 0x261b11, metalness: 0.7, roughness: 0.3 })
+    );
     ring.rotation.x = Math.PI / 2;
     ring.position.set(0, -0.05, 0);
 
@@ -227,7 +212,11 @@ export class FieldScene {
   }
 
   _addNoticePostInteractable() {
+    const id = 'canal_notice';
     const pos = new THREE.Vector3(-6.2, 0, -0.4);
+
+    // Register for debugging (optional)
+    this.game.state.world.registerEntity({ type: 'notice', zone: this.zoneId, id, props: ['read'] });
 
     const post = new THREE.Mesh(
       new THREE.CylinderGeometry(0.08, 0.1, 1.25, 10),
@@ -264,21 +253,36 @@ export class FieldScene {
       getHintText: () => 'Press E to read the posted notice.',
       onInteract: () => {
         if (this.game.dialogue.isActive()) return;
-        this.game.dialogue.start(
-          [
-            { speaker: 'Canal Notice', text: 'RAIL CURFEW IN EFFECT. After the third bell, transit warrants are required. Unregistered routes will be sealed.' },
-            { speaker: 'Canal Notice', text: 'Report missing ledger marks to the nearest Crown clerk. Unauthorized record correction is punishable by debt levy.' },
-            { speaker: 'Rian', text: 'They call it “correction.” Like scraping rust off a blade. Like names were never flesh to begin with.' }
-          ],
-          { onClose: () => this.game.hud.setToast('The notice flutters back into place.', 900) }
-        );
+
+        const alreadyRead = this.game.state.world.isNoticeRead(this.zoneId, id);
+
+        if (!alreadyRead) {
+          this.game.state.world.setNoticeRead(this.zoneId, id, true);
+          this.game.dialogue.start(
+            [
+              { speaker: 'Canal Notice', text: 'RAIL CURFEW IN EFFECT. After the third bell, transit warrants are required. Unregistered routes will be sealed.' },
+              { speaker: 'Canal Notice', text: 'Report missing ledger marks to the nearest Crown clerk. Unauthorized record correction is punishable by debt levy.' },
+              { speaker: 'Rian', text: 'They call it “correction.” Like scraping rust off a blade. Like names were never flesh to begin with.' }
+            ],
+            { onClose: () => this.game.hud.setToast('You memorize the last line without meaning to.', 1100) }
+          );
+        } else {
+          this.game.dialogue.start(
+            [
+              { speaker: 'Rian', text: 'Same warning. Same fear. The ink’s been rubbed where someone tried to erase a name.' }
+            ],
+            { onClose: () => this.game.hud.setToast('The paper trembles in the canal wind.', 900) }
+          );
+        }
       }
     });
   }
 
   _addChestInteractable() {
+    const chestId = 'chest_001';
     const pos = new THREE.Vector3(6.3, 0, -4.2);
-    const flag = 'chest_opened:chest_001';
+
+    this.game.state.world.registerEntity({ type: 'chest', zone: this.zoneId, id: chestId, props: ['opened'] });
 
     const base = new THREE.Mesh(
       new THREE.BoxGeometry(0.9, 0.45, 0.6),
@@ -309,11 +313,11 @@ export class FieldScene {
     this.scene.add(lock);
 
     const chest = {
-      id: 'chest_001',
+      id: chestId,
       label: 'Open Chest',
       position: pos,
       radius: 1.15,
-      opened: this.game.state.hasFlag(flag),
+      opened: this.game.state.world.isChestOpened(this.zoneId, chestId),
       opening: false,
       lidPivot,
       lock,
@@ -328,7 +332,7 @@ export class FieldScene {
         }
 
         chest.opened = true;
-        this.game.state.setFlag(flag, true);
+        this.game.state.world.setChestOpened(this.zoneId, chestId, true);
 
         chest.opening = true;
         chest.lidOpenT = 0;
@@ -363,7 +367,10 @@ export class FieldScene {
   }
 
   _addGateInteractable() {
+    const gateId = 'gate_001';
     const pos = new THREE.Vector3(0.0, 0, -7.7);
+
+    this.game.state.world.registerEntity({ type: 'gate', zone: this.zoneId, id: gateId, props: ['examined'] });
 
     const frame = new THREE.Mesh(
       new THREE.BoxGeometry(3.2, 2.2, 0.2),
@@ -380,12 +387,21 @@ export class FieldScene {
     this.scene.add(bars);
 
     this._registerInteractable({
-      id: 'gate_001',
+      id: gateId,
       label: 'Examine Gate',
       position: pos,
       radius: 1.6,
       getHintText: () => 'Press E to examine the sealed gate.',
-      onInteract: () => this.game.hud.setToast('The gate is sealed. (Map transition comes next)', 1400)
+      onInteract: () => {
+        const seen = this.game.state.world.isGateExamined(this.zoneId, gateId);
+
+        if (!seen) {
+          this.game.state.world.setGateExamined(this.zoneId, gateId, true);
+          this.game.hud.setToast('The gate is sealed. (Map transition comes next)', 1400);
+        } else {
+          this.game.hud.setToast('Still sealed. The lock has no keyhole—only a mark.', 1400);
+        }
+      }
     });
   }
 
