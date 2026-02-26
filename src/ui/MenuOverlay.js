@@ -3,7 +3,10 @@ function clamp(v, a, b) {
 }
 
 export class MenuOverlay {
-  constructor(rootEl, { onReturnToTitle = null, onSave = null, onVolumeChange = null } = {}) {
+  constructor(
+    rootEl,
+    { onReturnToTitle = null, onSave = null, onLoad = null, onVolumeChange = null } = {}
+  ) {
     this.rootEl = rootEl;
     this.mounted = false;
 
@@ -18,43 +21,31 @@ export class MenuOverlay {
 
     this.tabIndex = 0;
 
-    // per-tab selection
-    this.sel = {
-      items: 0,
-      settings: 0,
-      system: 0
-    };
+    this.sel = { items: 0, settings: 0, system: 0 };
 
     this.data = {
       inventory: [],
-      settings: { masterVolume: 100 }
+      settings: { masterVolume: 100 },
+      hasSave: false
     };
 
     this.onReturnToTitle = typeof onReturnToTitle === 'function' ? onReturnToTitle : null;
     this.onSave = typeof onSave === 'function' ? onSave : null;
+    this.onLoad = typeof onLoad === 'function' ? onLoad : null;
     this.onVolumeChange = typeof onVolumeChange === 'function' ? onVolumeChange : null;
 
     this.elements = {
       root: null,
-      panel: null,
       tabs: [],
-      title: null,
-
-      // items
       itemsList: null,
       itemName: null,
       itemDesc: null,
       itemQty: null,
 
-      // status
-      statusBlock: null,
-
-      // settings
       volumeVal: null,
       volumeFill: null,
       settingsRows: [],
 
-      // system
       systemRows: []
     };
   }
@@ -69,24 +60,22 @@ export class MenuOverlay {
     root.innerHTML = `
       <div class="vo-menu__panel">
         <div class="vo-menu__header">
-          <div class="vo-menu__title" data-role="title">Menu</div>
-          <div class="vo-menu__hint">Esc: Close • I: Items</div>
+          <div class="vo-menu__title">Menu</div>
+          <div class="vo-menu__hint">Esc: Close • I: Items • ←/→: Tabs</div>
         </div>
 
-        <div class="vo-menu__tabs" data-role="tabs">
+        <div class="vo-menu__tabs">
           ${this.tabs.map(t => `<div class="vo-menu__tab" data-role="tab" data-key="${t.key}">${t.label}</div>`).join('')}
         </div>
 
         <div class="vo-menu__content">
           <div class="vo-menu__left">
-            <!-- Items list -->
-            <div class="vo-menu__section vo-menu__items" data-role="itemsSection">
+            <div class="vo-menu__section" data-role="itemsSection">
               <div class="vo-menu__list" data-role="itemsList"></div>
             </div>
 
-            <!-- Status -->
-            <div class="vo-menu__section vo-menu__status" data-role="statusSection">
-              <div class="vo-menu__statusBlock" data-role="statusBlock">
+            <div class="vo-menu__section" data-role="statusSection">
+              <div class="vo-menu__statusBlock">
                 <div class="vo-menu__statusTitle">Party Status (Prototype)</div>
                 <div class="vo-menu__statusLine"><span>Rian</span><span>Lv 1</span></div>
                 <div class="vo-menu__statusLine"><span>HP</span><span>120 / 154</span></div>
@@ -95,17 +84,16 @@ export class MenuOverlay {
               </div>
             </div>
 
-            <!-- Settings -->
-            <div class="vo-menu__section vo-menu__settings" data-role="settingsSection">
+            <div class="vo-menu__section" data-role="settingsSection">
               <div class="vo-menu__row" data-role="setRow" data-id="volume">
-                <div class="vo-menu__rowLeft">
+                <div>
                   <div class="vo-menu__rowKey">Master Volume</div>
                   <div class="vo-menu__rowSub">Left/Right adjusts</div>
                 </div>
-                <div class="vo-menu__rowRight">
+                <div>
                   <div class="vo-menu__rowVal" data-role="volumeVal">100%</div>
                   <div class="vo-menu__slider">
-                    <div class="vo-menu__sliderFill" data-role="volumeFill" style="width: 100%"></div>
+                    <div class="vo-menu__sliderFill" data-role="volumeFill" style="width:100%"></div>
                   </div>
                 </div>
               </div>
@@ -115,10 +103,10 @@ export class MenuOverlay {
               </div>
             </div>
 
-            <!-- System -->
-            <div class="vo-menu__section vo-menu__system" data-role="systemSection">
-              <div class="vo-menu__list" data-role="systemList">
-                <div class="vo-menu__sysRow is-disabled" data-role="sysRow" data-id="save">Save (Coming Soon)</div>
+            <div class="vo-menu__section" data-role="systemSection">
+              <div class="vo-menu__list">
+                <div class="vo-menu__sysRow" data-role="sysRow" data-id="save">Save</div>
+                <div class="vo-menu__sysRow is-disabled" data-role="sysRow" data-id="load">Load Last Save</div>
                 <div class="vo-menu__sysRow" data-role="sysRow" data-id="returnTitle">Return to Title</div>
               </div>
             </div>
@@ -138,9 +126,7 @@ export class MenuOverlay {
     this.rootEl.appendChild(root);
 
     this.elements.root = root;
-    this.elements.title = root.querySelector('[data-role="title"]');
     this.elements.tabs = Array.from(root.querySelectorAll('[data-role="tab"]'));
-
     this.elements.itemsList = root.querySelector('[data-role="itemsList"]');
     this.elements.itemName = root.querySelector('[data-role="itemName"]');
     this.elements.itemDesc = root.querySelector('[data-role="itemDesc"]');
@@ -182,9 +168,10 @@ export class MenuOverlay {
     this._render();
   }
 
-  setData({ inventory, settings } = {}) {
+  setData({ inventory, settings, hasSave } = {}) {
     if (Array.isArray(inventory)) this.data.inventory = inventory;
     if (settings) this.data.settings = settings;
+    if (typeof hasSave === 'boolean') this.data.hasSave = hasSave;
     this._render();
   }
 
@@ -193,7 +180,7 @@ export class MenuOverlay {
 
     const tabKey = this.tabs[this.tabIndex].key;
 
-    // Tab switching
+    // Tabs
     if (actions.navLeftPressed) {
       this.tabIndex = (this.tabIndex - 1 + this.tabs.length) % this.tabs.length;
       this._render();
@@ -211,49 +198,29 @@ export class MenuOverlay {
       return true;
     }
 
-    // Per-tab navigation
+    // Items
     if (tabKey === 'items') {
       const listLen = Math.max(1, this.data.inventory.length);
-      if (actions.navUpPressed) {
-        this.sel.items = (this.sel.items - 1 + listLen) % listLen;
-        this._render();
-        return true;
-      }
-      if (actions.navDownPressed) {
-        this.sel.items = (this.sel.items + 1) % listLen;
-        this._render();
-        return true;
-      }
-      // confirm does nothing for now
+      if (actions.navUpPressed) { this.sel.items = (this.sel.items - 1 + listLen) % listLen; this._render(); return true; }
+      if (actions.navDownPressed) { this.sel.items = (this.sel.items + 1) % listLen; this._render(); return true; }
       if (actions.confirmPressed) return true;
     }
 
+    // Settings
     if (tabKey === 'settings') {
-      const rows = 2; // volume, back
-      if (actions.navUpPressed) {
-        this.sel.settings = (this.sel.settings - 1 + rows) % rows;
-        this._render();
-        return true;
-      }
-      if (actions.navDownPressed) {
-        this.sel.settings = (this.sel.settings + 1) % rows;
+      const rows = 2;
+      if (actions.navUpPressed) { this.sel.settings = (this.sel.settings - 1 + rows) % rows; this._render(); return true; }
+      if (actions.navDownPressed) { this.sel.settings = (this.sel.settings + 1) % rows; this._render(); return true; }
+
+      if (this.sel.settings === 0 && (actions.navLeftPressed || actions.navRightPressed)) {
+        const delta = actions.navRightPressed ? 5 : -5;
+        const next = clamp((this.data.settings.masterVolume ?? 100) + delta, 0, 100);
+        this.data.settings.masterVolume = next;
+        this.onVolumeChange?.(next);
         this._render();
         return true;
       }
 
-      // Adjust volume when volume row selected
-      if (this.sel.settings === 0) {
-        if (actions.navLeftPressed || actions.navRightPressed) {
-          const delta = actions.navRightPressed ? 5 : -5;
-          const next = clamp((this.data.settings.masterVolume ?? 100) + delta, 0, 100);
-          this.data.settings.masterVolume = next;
-          this.onVolumeChange?.(next);
-          this._render();
-          return true;
-        }
-      }
-
-      // Back row
       if (actions.confirmPressed && this.sel.settings === 1) {
         this.setTab('items');
         return true;
@@ -262,39 +229,28 @@ export class MenuOverlay {
       if (actions.confirmPressed) return true;
     }
 
+    // System
     if (tabKey === 'system') {
-      const rows = this.elements.systemRows.length || 2;
-      if (actions.navUpPressed) {
-        this.sel.system = (this.sel.system - 1 + rows) % rows;
-        this._render();
-        return true;
-      }
-      if (actions.navDownPressed) {
-        this.sel.system = (this.sel.system + 1) % rows;
-        this._render();
-        return true;
-      }
+      const rows = this.elements.systemRows.length || 3;
+      if (actions.navUpPressed) { this.sel.system = (this.sel.system - 1 + rows) % rows; this._render(); return true; }
+      if (actions.navDownPressed) { this.sel.system = (this.sel.system + 1) % rows; this._render(); return true; }
 
       if (actions.confirmPressed) {
         const row = this.elements.systemRows[this.sel.system];
         const id = row?.dataset?.id;
 
-        if (id === 'save') {
-          // disabled row
-          return true;
-        }
+        const isDisabled = row?.classList?.contains('is-disabled');
+
+        if (isDisabled) return true;
+
+        if (id === 'save') this.onSave?.();
+        if (id === 'load') this.onLoad?.();
         if (id === 'returnTitle') {
           this.close();
           this.onReturnToTitle?.();
-          return true;
         }
         return true;
       }
-    }
-
-    // status tab consumes confirm/cancel only
-    if (tabKey === 'status') {
-      if (actions.confirmPressed) return true;
     }
 
     return false;
@@ -309,17 +265,12 @@ export class MenuOverlay {
       t.classList.toggle('is-active', t.dataset.key === activeKey);
     }
 
-    // Sections
+    // Section visibility via class
     this.elements.root.classList.remove('tab-items', 'tab-status', 'tab-settings', 'tab-system');
     this.elements.root.classList.add(`tab-${activeKey}`);
 
-    // Items list
     this._renderItems();
-
-    // Settings
     this._renderSettings();
-
-    // System
     this._renderSystem();
   }
 
@@ -367,21 +318,25 @@ export class MenuOverlay {
     if (this.elements.volumeVal) this.elements.volumeVal.textContent = `${vol}%`;
     if (this.elements.volumeFill) this.elements.volumeFill.style.width = `${vol}%`;
 
-    // Row highlight
     for (let i = 0; i < this.elements.settingsRows.length; i++) {
       this.elements.settingsRows[i].classList.toggle('is-selected', i === this.sel.settings);
     }
   }
 
   _renderSystem() {
-    // highlight system rows
+    // Enable/disable Load row based on hasSave
+    for (const row of this.elements.systemRows) {
+      if (row.dataset.id === 'load') {
+        row.classList.toggle('is-disabled', !this.data.hasSave);
+      }
+    }
+
     for (let i = 0; i < this.elements.systemRows.length; i++) {
-      const row = this.elements.systemRows[i];
-      row.classList.toggle('is-selected', i === this.sel.system);
+      this.elements.systemRows[i].classList.toggle('is-selected', i === this.sel.system);
     }
   }
 
-  _setVisible(on, immediate = false) {
+  _setVisible(on) {
     if (!this.elements.root) return;
 
     if (!on) {
@@ -392,9 +347,5 @@ export class MenuOverlay {
 
     this.elements.root.classList.add('is-visible');
     this.elements.root.setAttribute('aria-hidden', 'false');
-
-    if (immediate) {
-      // nothing special required
-    }
   }
 }

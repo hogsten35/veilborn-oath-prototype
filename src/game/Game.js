@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { StateManager } from './StateManager.js';
 import { GameState } from './GameState.js';
+import { SaveSystem } from './SaveSystem.js';
 
 import { BootScene } from '../scenes/BootScene.js';
 import { TitleScene } from '../scenes/TitleScene.js';
@@ -102,18 +103,15 @@ class KeyboardInput {
       move: this.getMoveVector(),
       run: this.isDown('ShiftLeft', 'ShiftRight'),
 
-      // Navigation (one-press)
       navUpPressed: this.wasPressed('ArrowUp', 'KeyW'),
       navDownPressed: this.wasPressed('ArrowDown', 'KeyS'),
       navLeftPressed: this.wasPressed('ArrowLeft', 'KeyA'),
       navRightPressed: this.wasPressed('ArrowRight', 'KeyD'),
 
-      // Common actions (one-press)
       confirmPressed: this.wasPressed('Enter', 'Space'),
       cancelPressed: this.wasPressed('Escape', 'Backspace'),
       interactPressed: this.wasPressed('KeyE', 'Enter'),
 
-      // Menu shortcuts
       menuPressed: this.wasPressed('Escape'),
       inventoryPressed: this.wasPressed('KeyI')
     };
@@ -126,6 +124,10 @@ export class Game {
     this.uiRootEl = uiRootEl;
 
     this.state = new GameState();
+    this.saveSystem = new SaveSystem();
+
+    // Load settings immediately (so volume persists even before Continue)
+    this.saveSystem.applySettingsIfPresent(this.state);
 
     this.clock = {
       running: false,
@@ -139,7 +141,6 @@ export class Game {
 
     this.input = new KeyboardInput();
 
-    // UI layers
     this.hud = new HUD(this.uiRootEl);
 
     this.dialogueBox = new DialogueBox(this.uiRootEl);
@@ -151,7 +152,18 @@ export class Game {
         this.stateManager.change('title');
       },
       onSave: () => {
-        this.hud.setToast('Save not implemented yet.', 1200);
+        const ok = this.saveSystem.save(this.state);
+        this.hud.setToast(ok ? 'Game saved.' : 'Save failed.', 1000);
+      },
+      onLoad: () => {
+        const ok = this.saveSystem.loadInto(this.state);
+        if (!ok) {
+          this.hud.setToast('No valid save found.', 1200);
+          return;
+        }
+        this.hud.setToast('Game loaded.', 900);
+        this.hud.setInteractPrompt?.({ visible: false });
+        this.stateManager.change('field', { fromLoad: true });
       },
       onVolumeChange: (v) => {
         this.state.settings.masterVolume = v;
@@ -178,11 +190,7 @@ export class Game {
   }
 
   _createRenderer() {
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: false
-    });
-
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setClearColor(0x06070a, 1);
@@ -261,19 +269,19 @@ export class Game {
 
       this.stateManager.update(dt);
 
-      // Update dialogue + popups
       this.dialogue.update(dt);
       this.itemPopup.update(dt);
 
-      // Keep menu data fresh
+      // Menu data
       this.menu.setData({
         inventory: this.state.getInventoryList(),
-        settings: this.state.settings
+        settings: this.state.settings,
+        hasSave: this.saveSystem.hasSave()
       });
 
       const actions = this._getRawActions();
 
-      // 1) Dialogue gets priority
+      // Dialogue priority
       if (this.dialogue.isActive()) {
         if (actions.confirmPressed) this.dialogue.handleConfirm();
         if (actions.cancelPressed) this.dialogue.handleCancel();
@@ -281,29 +289,18 @@ export class Game {
         continue;
       }
 
-      // 2) Menu toggle logic (fixes Esc opening + instant closing)
+      // Menu toggles only in gameplay
       const inGameplay = this.stateManager.currentKey === 'field';
 
       if (inGameplay) {
-        // Open menu
         if (!this.menu.isOpen()) {
-          if (actions.inventoryPressed) {
+          if (actions.inventoryPressed || actions.menuPressed) {
             this.hud.setInteractPrompt?.({ visible: false });
             this.menu.open({ tabKey: 'items' });
-            // IMPORTANT: do NOT also pass this same Esc press into menu handling this frame
-          } else if (actions.menuPressed) {
-            this.hud.setInteractPrompt?.({ visible: false });
-            this.menu.open({ tabKey: 'items' });
-            // IMPORTANT: do NOT call menu.handleInput on the same frame
           }
         } else {
-          // Close menu with Esc
-          if (actions.menuPressed) {
-            this.menu.close();
-          } else {
-            // Let menu consume inputs (Up/Down/Left/Right/Enter/Backspace)
-            this.menu.handleInput(actions);
-          }
+          if (actions.menuPressed) this.menu.close();
+          else this.menu.handleInput(actions);
         }
       }
 
@@ -324,7 +321,7 @@ export class Game {
     return this.input.getActions();
   }
 
-  // Scene-facing actions: lock movement/interact while dialogue or menu open
+  // Scene-facing: lock movement + interact during dialogue/menu
   getInputActions() {
     const a = this._getRawActions();
 

@@ -23,6 +23,11 @@ export class GameState {
         desc: 'A chipped sliver of stamped brass ledger-plate. The tally marks don’t match any common registry.'
       }
     };
+
+    // Minimal player state (field position)
+    this.player = {
+      field: { x: 0, z: 0 }
+    };
   }
 
   // -------- Flags --------
@@ -67,7 +72,6 @@ export class GameState {
   }
 
   getInventoryList() {
-    // Returns [{id, name, qty, desc}] sorted by name
     const out = [];
     for (const [id, qty] of this.inventory.entries()) {
       const def = this.getItemDef(id);
@@ -80,5 +84,72 @@ export class GameState {
     }
     out.sort((a, b) => a.name.localeCompare(b.name));
     return out;
+  }
+
+  // -------- New Game Reset (keeps settings) --------
+  resetForNewGame() {
+    const keepSettings = { ...this.settings };
+
+    this.flags.clear();
+    this.inventory.clear();
+
+    this.settings = keepSettings;
+    this.player = { field: { x: 0, z: 0 } };
+  }
+
+  // -------- Save Serialization --------
+  toSaveData() {
+    return {
+      settings: {
+        masterVolume: Number(this.settings.masterVolume) || 100
+      },
+      flags: Array.from(this.flags),
+      inventory: Array.from(this.inventory.entries()).map(([id, qty]) => ({ id, qty })),
+      player: {
+        field: {
+          x: Number(this.player.field?.x) || 0,
+          z: Number(this.player.field?.z) || 0
+        }
+      }
+    };
+  }
+
+  applySaveData(data) {
+    try {
+      if (!data || typeof data !== 'object') return false;
+
+      // Settings
+      if (data.settings && typeof data.settings.masterVolume === 'number') {
+        this.settings.masterVolume = Math.max(0, Math.min(100, data.settings.masterVolume));
+      }
+
+      // Flags
+      this.flags.clear();
+      if (Array.isArray(data.flags)) {
+        for (const f of data.flags) {
+          if (typeof f === 'string') this.flags.add(f);
+        }
+      }
+
+      // Inventory
+      this.inventory.clear();
+      if (Array.isArray(data.inventory)) {
+        for (const row of data.inventory) {
+          const id = row?.id;
+          const qty = Math.max(0, Math.floor(row?.qty || 0));
+          if (typeof id === 'string' && qty > 0) this.inventory.set(id, qty);
+        }
+      }
+
+      // Player
+      const px = Number(data.player?.field?.x);
+      const pz = Number(data.player?.field?.z);
+      this.player.field.x = Number.isFinite(px) ? px : 0;
+      this.player.field.z = Number.isFinite(pz) ? pz : 0;
+
+      return true;
+    } catch {
+      return false;
+    }
   }
 }

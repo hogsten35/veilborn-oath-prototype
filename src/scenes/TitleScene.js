@@ -16,12 +16,7 @@ export class TitleScene {
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.Fog(0x07080b, 6, 28);
 
-    this.camera = new THREE.PerspectiveCamera(
-      55,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      100
-    );
+    this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 100);
     this.camera.position.set(0, 3.4, 7.4);
     this.camera.lookAt(0, 1.2, 0);
 
@@ -29,15 +24,8 @@ export class TitleScene {
 
     this.screen = 'main'; // main | settings | credits
     this.selection = 0;
-    this.canContinue = false;
 
-    this.fade = {
-      alpha: 1,
-      target: 0,
-      speed: 2.8,
-      active: true,
-      onDone: null
-    };
+    this.fade = { alpha: 1, target: 0, speed: 2.8, active: true, onDone: null };
 
     this._setupBackdrop();
   }
@@ -62,11 +50,7 @@ export class TitleScene {
 
     const floorGeo = new THREE.CircleGeometry(5.2, 64);
     floorGeo.rotateX(-Math.PI / 2);
-    const floorMat = new THREE.MeshStandardMaterial({
-      color: 0x111318,
-      metalness: 0.08,
-      roughness: 0.92
-    });
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x111318, metalness: 0.08, roughness: 0.92 });
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.position.y = -0.2;
     this.scene.add(floor);
@@ -97,7 +81,6 @@ export class TitleScene {
 
   enter() {
     this.game.hud.setMode('title');
-
     this._syncTitleUI();
 
     this.fade.alpha = 1;
@@ -109,11 +92,15 @@ export class TitleScene {
     this.game.hud.setToast('Veilborn Oath — Title', 700);
   }
 
+  _canContinue() {
+    return this.game.saveSystem.hasSave();
+  }
+
   _syncTitleUI() {
     this.game.hud.showTitleScreen({
       screen: this.screen,
       selection: this.selection,
-      canContinue: this.canContinue,
+      canContinue: this._canContinue(),
       masterVolume: this.game.state.settings.masterVolume
     });
   }
@@ -126,12 +113,10 @@ export class TitleScene {
     this.prism.rotation.y += dt * 0.33;
     this.prism.position.y = 1.2 + Math.sin(this.elapsed * 1.7) * 0.05;
 
-    const pulse = 0.55 + Math.sin(this.elapsed * 1.9) * 0.08;
-    this.teal.intensity = pulse;
+    this.teal.intensity = 0.55 + Math.sin(this.elapsed * 1.9) * 0.08;
     this.violet.intensity = 0.5 + Math.cos(this.elapsed * 1.6) * 0.08;
 
     this._updateFade(dt);
-
     if (this.fade.active && this.fade.target > this.fade.alpha) return;
 
     const actions = this.game.getInputActions();
@@ -158,26 +143,22 @@ export class TitleScene {
     if (this.screen === 'main') {
       return [
         { id: 'new', enabled: true },
-        { id: 'continue', enabled: this.canContinue },
+        { id: 'continue', enabled: this._canContinue() },
         { id: 'settings', enabled: true },
         { id: 'credits', enabled: true }
       ];
     }
-
     if (this.screen === 'settings') {
       return [
         { id: 'volume', enabled: true },
         { id: 'back', enabled: true }
       ];
     }
-
     return [{ id: 'back', enabled: true }];
   }
 
   _moveSelection(delta) {
     const options = this._getOptionsForScreen();
-    if (options.length === 0) return;
-
     let idx = this.selection;
 
     for (let i = 0; i < options.length; i++) {
@@ -193,23 +174,31 @@ export class TitleScene {
     const options = this._getOptionsForScreen();
     const choice = options[this.selection];
     if (!choice || !choice.enabled) {
-      this.game.hud.setToast('That option is not available yet.', 900);
+      this.game.hud.setToast('That option is not available.', 900);
       return;
     }
 
     if (this.screen === 'main') {
-      if (choice.id === 'new') return this._startNewGame();
+      if (choice.id === 'new') {
+        this.game.state.resetForNewGame();
+        return this._startToField({ fromTitle: true });
+      }
 
       if (choice.id === 'continue') {
-        this.game.hud.setToast('Continue unlocks after Save/Load is added.', 1200);
-        return;
+        const ok = this.game.saveSystem.loadInto(this.game.state);
+        if (!ok) {
+          this.game.hud.setToast('No valid save found.', 1200);
+          this._syncTitleUI();
+          return;
+        }
+        this.game.hud.setToast('Loaded save.', 900);
+        return this._startToField({ fromLoad: true });
       }
 
       if (choice.id === 'settings') {
         this.screen = 'settings';
         this.selection = 0;
         this._syncTitleUI();
-        this.game.hud.setToast('Settings: adjust volume with Left/Right.', 1000);
         return;
       }
 
@@ -226,12 +215,8 @@ export class TitleScene {
         this.screen = 'main';
         this.selection = 0;
         this._syncTitleUI();
-        return;
       }
-      if (choice.id === 'volume') {
-        this.game.hud.setToast('Use Left/Right to adjust volume.', 900);
-        return;
-      }
+      return;
     }
 
     if (this.screen === 'credits') {
@@ -242,23 +227,21 @@ export class TitleScene {
   }
 
   _cancel() {
-    if (this.screen === 'main') {
-      this.game.hud.setToast('Choose “New Game” to enter the field.', 900);
+    if (this.screen !== 'main') {
+      this.screen = 'main';
+      this.selection = 0;
+      this._syncTitleUI();
       return;
     }
-
-    this.screen = 'main';
-    this.selection = 0;
-    this._syncTitleUI();
+    this.game.hud.setToast('Choose New Game or Continue.', 900);
   }
 
-  _startNewGame() {
-    this.game.hud.setToast('Swearing the oath...', 800);
-
+  _startToField(params) {
+    this.game.hud.setToast('Crossing the veil...', 800);
     this.fade.target = 1;
     this.fade.active = true;
     this.fade.onDone = () => {
-      this.game.stateManager.change('field', { fromTitle: true });
+      this.game.stateManager.change('field', params);
     };
   }
 
@@ -272,7 +255,6 @@ export class TitleScene {
       this.fade.alpha = this.fade.target;
       this.fade.active = false;
       this.game.hud.setFade(this.fade.alpha);
-
       if (this.fade.onDone) {
         const fn = this.fade.onDone;
         this.fade.onDone = null;
@@ -291,18 +273,13 @@ export class TitleScene {
     this.game.hud.setFade(this.fade.alpha);
   }
 
-  onResize(width, height) {
-    this.camera.aspect = width / height;
+  onResize(w, h) {
+    this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
 
   getHUDData() {
-    return {
-      sceneName: this.displayName,
-      locationName: this.locationName,
-      hintText: this.hintText,
-      statusText: this.statusText
-    };
+    return { sceneName: this.displayName, locationName: this.locationName, hintText: this.hintText, statusText: this.statusText };
   }
 
   exit() {
